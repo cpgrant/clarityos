@@ -1,0 +1,12 @@
+models:
+  fast:
+    provider: openai
+    provider_id: gpt-4o-mini
+
+  smart:
+    provider: openai
+    provider_id: gpt-4o
+
+  local_fast:
+    provider: ollama
+    provider_id: llama3.1:latest

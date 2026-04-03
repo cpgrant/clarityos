@@ -1,0 +1,12 @@
+agents:
+  default:
+    system: "You are a helpful assistant"
+    model: fast
+
+  researcher:
+    system: "You provide precise, structured answers"
+    model: smart
+
+  local:
+    system: "You are a helpful assistant"
+    model: local_fast
