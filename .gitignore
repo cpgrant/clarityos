@@ -1,5 +1,19 @@
-.venv/
+# Python
 __pycache__/
 *.pyc
-.env
+
+# Virtual env
+.venv/
+
+# Logs
 logs/
+
+# Secrets
+.env
+
+# Local tooling
+.codex
+*.tar.gz
+
+# OS
+.DS_Store
