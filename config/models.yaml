@@ -1,4 +1,5 @@
 models:
+  # OpenAI-backed models
   fast:
     provider: openai
     provider_id: gpt-4o-mini
@@ -7,6 +8,7 @@ models:
     provider: openai
     provider_id: gpt-4o
 
+  # Ollama-backed models
   local_fast:
     provider: ollama
     provider_id: llama3.1:latest
