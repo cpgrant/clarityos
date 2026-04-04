@@ -1,0 +1,286 @@
+# ClarityOS v0.1
+
+ClarityOS is a transparent runtime layer for AI agents.
+v0.1 is a minimal, explicit single-agent runtime.
+
+
+`API -> Agent -> Prompt -> Model -> Response`
+
+This is not a prototype. It is the first clean foundation.
+
+## What v0.1 Is
+
+- A single-agent runtime
+- Explicit and inspectable
+- Minimal, but architecturally sound and extensible
+
+## What v0.1 Is Not
+
+- Multi-agent
+- Async
+- Production-ready
+- Tool-using
+- Memory-enabled
+- "Smart" orchestration
+
+
+## Core Principle
+
+ClarityOS prioritizes explicitness over convenience.
+Every step in execution must be visible and inspectable.
+
+## Goal
+
+You can call:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply"}'
+```
+
+And observe exactly:
+
+- Which agent ran
+- Which prompt was built
+- Which provider was used
+- Which model was used
+- What the output was
+
+No magic. No hidden routing.
+
+## Architecture
+
+```text
+API -> Agent -> Prompt -> Model -> Response
+```
+
+## Project Structure
+
+```text
+clarityos/
+├── .gitignore
+├── .python-version
+├── api/
+│   └── main.py
+├── config/
+│   ├── agents.yaml
+│   └── models.yaml
+├── logs/
+├── runtime/
+│   ├── agent.py
+│   ├── model.py
+│   └── prompt_builder.py
+├── requirements.txt
+└── README.md
+```
+
+## Python Version
+
+This project targets Python `3.12.3` via `.python-version`.
+
+## Install
+
+From inside the project directory:
+
+```bash
+python --version
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Environment
+
+For OpenAI models:
+
+```bash
+export OPENAI_API_KEY=your_key_here
+```
+
+For Ollama models:
+
+- Run Ollama separately
+- Default base URL is `http://127.0.0.1:11434`
+- Set `OLLAMA_BASE_URL` only if your Ollama server is elsewhere
+
+Example:
+
+```bash
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+## Configuration
+
+Agents live in `config/agents.yaml`.
+Models live in `config/models.yaml`.
+
+Example agent config:
+
+```yaml
+agents:
+  default:
+    system: "You are a helpful assistant"
+    model: fast
+```
+
+Example model config:
+
+```yaml
+models:
+  fast:
+    provider: openai
+    provider_id: gpt-4o-mini
+
+  local_fast:
+    provider: ollama
+    provider_id: llama3.2
+```
+
+## Current Providers
+
+`v0.1` currently supports:
+
+- `openai`
+- `ollama`
+
+OpenAI is accessed via the official Python SDK.
+Ollama is accessed via its local HTTP API.
+
+## Run
+
+Start the API:
+
+```bash
+source .venv/bin/activate
+uvicorn api.main:app --reload
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+## Test
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8000/status
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+Run the default agent:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply"}'
+```
+
+Run the researcher agent:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Summarize climate risk in 3 bullets","agent":"researcher"}'
+```
+
+Run the local Ollama-backed agent:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply","agent":"local"}'
+```
+
+## What `/run` Returns
+
+The `/run` response is intentionally inspectable. It returns:
+
+- `agent`
+- `prompt`
+- `provider`
+- `model`
+- `output`
+
+That means you can see exactly what happened on each request.
+
+## Dev Workflow
+
+Use two terminals.
+
+Terminal 1:
+
+```bash
+cd clarityos
+source .venv/bin/activate
+uvicorn api.main:app --reload
+```
+
+Terminal 2:
+
+```bash
+curl http://127.0.0.1:8000/status
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply"}'
+```
+
+To stop the server, return to Terminal 1 and press `Ctrl+C`.
+
+## v0.1 Completion Criteria
+
+`v0.1` is complete when:
+
+- The API starts locally
+- `/status` returns `{"status":"ok"}`
+- `/run` executes a named agent
+- Prompt construction is explicit
+- Model selection is config-driven
+- The response shows the exact agent, prompt, provider, model, and output
+
+## What Not To Add Yet
+
+Do not add these to `v0.1`:
+
+- Queues
+- Tools
+- Memory
+- Multi-agent routing
+- Async runtime
+- Policy layers
+
+Those belong to later versions.
+
+## Next Version
+
+The recommended next step is `v0.2: tracing`.
+
+That means writing a JSON log per run in `logs/` with:
+
+- Input
+- Agent
+- Prompt
+- Provider
+- Model
+- Output
+
+That keeps the system simple while making it much more observable.
+
+## Versioning Philosophy
+
+Each version of ClarityOS adds one capability at a time, without introducing hidden behavior.
+
+v0.1: execution  
+v0.2: tracing  
+v0.3+: controlled capabilities

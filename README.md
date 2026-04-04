@@ -1,53 +1,22 @@
-# ClarityOS v0.1
+# ClarityOS
 
-ClarityOS is a transparent runtime layer for AI agents.
-v0.1 is a minimal, explicit single-agent runtime.
+Minimal, explicit LLM execution runtime.
 
+## Status
 
-`API -> Agent -> Prompt -> Model -> Response`
+- `v0.1` - execution
+- `v0.2` - traceability
+- `v0.2.1` - lightweight testing
 
-This is not a prototype. It is the first clean foundation.
+## What It Does
 
-## What v0.1 Is
+Given an input, ClarityOS:
 
-- A single-agent runtime
-- Explicit and inspectable
-- Minimal, but architecturally sound and extensible
-
-## What v0.1 Is Not
-
-- Multi-agent
-- Async
-- Production-ready
-- Tool-using
-- Memory-enabled
-- "Smart" orchestration
-
-
-## Core Principle
-
-ClarityOS prioritizes explicitness over convenience.
-Every step in execution must be visible and inspectable.
-
-## Goal
-
-You can call:
-
-```bash
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{"input":"Explain agents simply"}'
-```
-
-And observe exactly:
-
-- Which agent ran
-- Which prompt was built
-- Which provider was used
-- Which model was used
-- What the output was
-
-No magic. No hidden routing.
+1. Loads agent config from YAML
+2. Builds a prompt
+3. Calls a model
+4. Returns a response
+5. Writes a full execution trace
 
 ## Architecture
 
@@ -59,8 +28,6 @@ API -> Agent -> Prompt -> Model -> Response
 
 ```text
 clarityos/
-├── .gitignore
-├── .python-version
 ├── api/
 │   └── main.py
 ├── config/
@@ -70,21 +37,19 @@ clarityos/
 ├── runtime/
 │   ├── agent.py
 │   ├── model.py
-│   └── prompt_builder.py
+│   ├── prompt_builder.py
+│   └── trace.py
+├── scripts/
+│   └── show_latest_log.sh
+├── tests/
+│   └── test_agent.py
 ├── requirements.txt
 └── README.md
 ```
 
-## Python Version
-
-This project targets Python `3.12.3` via `.python-version`.
-
 ## Install
 
-From inside the project directory:
-
 ```bash
-python --version
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -92,88 +57,40 @@ pip install -r requirements.txt
 
 ## Environment
 
-For OpenAI models:
+For OpenAI-backed agents:
 
 ```bash
 export OPENAI_API_KEY=your_key_here
 ```
 
-For Ollama models:
-
-- Run Ollama separately
-- Default base URL is `http://127.0.0.1:11434`
-- Set `OLLAMA_BASE_URL` only if your Ollama server is elsewhere
-
-Example:
+For Ollama-backed agents:
 
 ```bash
-export OLLAMA_BASE_URL=http://127.0.0.1:11434
+ollama serve
+ollama pull llama3.1:latest
 ```
 
-## Configuration
-
-Agents live in `config/agents.yaml`.
-Models live in `config/models.yaml`.
-
-Example agent config:
-
-```yaml
-agents:
-  default:
-    system: "You are a helpful assistant"
-    model: fast
-```
-
-Example model config:
-
-```yaml
-models:
-  fast:
-    provider: openai
-    provider_id: gpt-4o-mini
-
-  local_fast:
-    provider: ollama
-    provider_id: llama3.2
-```
-
-## Current Providers
-
-`v0.1` currently supports:
-
-- `openai`
-- `ollama`
-
-OpenAI is accessed via the official Python SDK.
-Ollama is accessed via its local HTTP API.
+The default Ollama base URL is `http://127.0.0.1:11434`. Set `OLLAMA_BASE_URL` only if your Ollama server is elsewhere.
 
 ## Run
-
-Start the API:
 
 ```bash
 source .venv/bin/activate
 uvicorn api.main:app --reload
 ```
 
-The API will be available at:
+API base URL:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## Test
+## API
 
 Health check:
 
 ```bash
 curl http://127.0.0.1:8000/status
-```
-
-Expected response:
-
-```json
-{"status":"ok"}
 ```
 
 Run the default agent:
@@ -200,9 +117,7 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"input":"Explain agents simply","agent":"local"}'
 ```
 
-## What `/run` Returns
-
-The `/run` response is intentionally inspectable. It returns:
+The `/run` response returns:
 
 - `agent`
 - `prompt`
@@ -210,77 +125,72 @@ The `/run` response is intentionally inspectable. It returns:
 - `model`
 - `output`
 
-That means you can see exactly what happened on each request.
+## Logs
 
-## Dev Workflow
+Each run creates:
 
-Use two terminals.
-
-Terminal 1:
-
-```bash
-cd clarityos
-source .venv/bin/activate
-uvicorn api.main:app --reload
+```text
+logs/run_<timestamp>.json
 ```
 
-Terminal 2:
+Success log example:
 
-```bash
-curl http://127.0.0.1:8000/status
+```json
+{
+  "version": "v0.2",
+  "timestamp": "...",
+  "run_id": "...",
+  "status": "success",
+  "duration_ms": 12.3,
+  "input": "...",
+  "agent": "...",
+  "prompt": "...",
+  "model_alias": "fast",
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "output": "..."
+}
 ```
 
-```bash
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{"input":"Explain agents simply"}'
+Error logs include:
+
+```json
+{
+  "version": "v0.2",
+  "status": "error",
+  "error_type": "...",
+  "error_message": "..."
+}
 ```
 
-To stop the server, return to Terminal 1 and press `Ctrl+C`.
+Inspect the newest log:
 
-## v0.1 Completion Criteria
+```bash
+scripts/show_latest_log.sh
+```
 
-`v0.1` is complete when:
+## Testing
 
-- The API starts locally
-- `/status` returns `{"status":"ok"}`
-- `/run` executes a named agent
-- Prompt construction is explicit
-- Model selection is config-driven
-- The response shows the exact agent, prompt, provider, model, and output
+Run the minimal test suite:
 
-## What Not To Add Yet
+```bash
+python -m unittest discover -s tests -v
+```
 
-Do not add these to `v0.1`:
+The tests cover:
 
-- Queues
-- Tools
-- Memory
-- Multi-agent routing
-- Async runtime
-- Policy layers
+- success path
+- error path
+- deterministic fake-model execution
+- trace creation
 
-Those belong to later versions.
+## Design Principles
 
-## Next Version
+- explicit over implicit
+- observable execution
+- deterministic testing
+- minimal architecture
 
-The recommended next step is `v0.2: tracing`.
+## Next
 
-That means writing a JSON log per run in `logs/` with:
-
-- Input
-- Agent
-- Prompt
-- Provider
-- Model
-- Output
-
-That keeps the system simple while making it much more observable.
-
-## Versioning Philosophy
-
-Each version of ClarityOS adds one capability at a time, without introducing hidden behavior.
-
-v0.1: execution  
-v0.2: tracing  
-v0.3+: controlled capabilities
+`v0.3` - tools
