@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from runtime.agent import run_agent
 
-app = FastAPI(title="ClarityOS", version="0.1.0")
+app = FastAPI(title="ClarityOS", version="0.2.2")
 
 
 @app.get("/status")

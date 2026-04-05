@@ -50,7 +50,7 @@ class RunAgentTests(unittest.TestCase):
         payload = self.latest_log()
 
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(payload["version"], "v0.2")
+        self.assertEqual(payload["version"], "v0.2.2")
         self.assertEqual(payload["input"], "hello")
         self.assertEqual(payload["agent"], "default")
         self.assertEqual(payload["model_alias"], "fast")
@@ -68,7 +68,7 @@ class RunAgentTests(unittest.TestCase):
         payload = self.latest_log()
 
         self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["version"], "v0.2")
+        self.assertEqual(payload["version"], "v0.2.2")
         self.assertEqual(payload["input"], "hello")
         self.assertEqual(payload["agent"], "missing")
         self.assertIsNone(payload["prompt"])

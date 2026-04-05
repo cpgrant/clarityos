@@ -7,6 +7,7 @@ Minimal, explicit LLM execution runtime.
 - `v0.1` - execution
 - `v0.2` - traceability
 - `v0.2.1` - lightweight testing
+- `v0.2.2` - multi-provider support (OpenAI + Ollama)
 
 ## What It Does
 
@@ -137,7 +138,7 @@ Success log example:
 
 ```json
 {
-  "version": "v0.2",
+  "version": "v0.2.2",
   "timestamp": "...",
   "run_id": "...",
   "status": "success",
@@ -156,7 +157,7 @@ Error logs include:
 
 ```json
 {
-  "version": "v0.2",
+  "version": "v0.2.2",
   "status": "error",
   "error_type": "...",
   "error_message": "..."
