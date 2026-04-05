@@ -61,6 +61,74 @@ class RunAgentTests(unittest.TestCase):
         self.assertIn("duration_ms", payload)
         self.assertIn("timestamp", payload)
 
+    def test_run_agent_tool_success(self) -> None:
+        result = agent.run_agent(
+            "hello",
+            "default",
+            tool_name="echo",
+            tool_args={"text": "tool says hi"},
+        )
+
+        self.assertEqual(result["agent"], "default")
+        self.assertIsNone(result["prompt"])
+        self.assertIsNone(result["provider"])
+        self.assertIsNone(result["model"])
+        self.assertEqual(result["tool"], "echo")
+        self.assertEqual(result["tool_args"], {"text": "tool says hi"})
+        self.assertEqual(result["tool_output"], "tool says hi")
+        self.assertEqual(result["output"], "tool says hi")
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["agent"], "default")
+        self.assertEqual(payload["tool_name"], "echo")
+        self.assertEqual(payload["tool_args"], {"text": "tool says hi"})
+        self.assertEqual(payload["tool_output"], "tool says hi")
+        self.assertTrue(payload["tool_ok"])
+        self.assertEqual(payload["output"], "tool says hi")
+
+    def test_run_agent_disallowed_tool_logs_error(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "Tool not allowed for agent `researcher`: echo"
+        ):
+            agent.run_agent(
+                "hello",
+                "researcher",
+                tool_name="echo",
+                tool_args={"text": "blocked"},
+            )
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["agent"], "researcher")
+        self.assertEqual(payload["tool_name"], "echo")
+        self.assertEqual(payload["tool_args"], {"text": "blocked"})
+        self.assertIsNone(payload["tool_output"])
+        self.assertFalse(payload["tool_ok"])
+        self.assertIn("Tool not allowed for agent `researcher`: echo", payload["tool_error"])
+
+    @patch.object(agent, "call_tool", side_effect=RuntimeError("tool exploded"))
+    def test_run_agent_tool_failure_logs_error(self, _mock_call_tool) -> None:
+        with self.assertRaisesRegex(RuntimeError, "tool exploded"):
+            agent.run_agent(
+                "hello",
+                "default",
+                tool_name="echo",
+                tool_args={"text": "boom"},
+            )
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["agent"], "default")
+        self.assertEqual(payload["tool_name"], "echo")
+        self.assertEqual(payload["tool_args"], {"text": "boom"})
+        self.assertIsNone(payload["tool_output"])
+        self.assertFalse(payload["tool_ok"])
+        self.assertEqual(payload["tool_error"], "tool exploded")
+
     def test_run_agent_missing_logs_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown agent: missing"):
             agent.run_agent("hello", "missing")

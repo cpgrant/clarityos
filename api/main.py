@@ -14,5 +14,12 @@ def status() -> dict[str, str]:
 def run(payload: dict) -> dict:
     user_input = payload.get("input", "")
     agent_name = payload.get("agent", "default")
+    tool_name = payload.get("tool")
+    tool_args = payload.get("tool_args")
 
-    return run_agent(user_input=user_input, agent_name=agent_name)
+    return run_agent(
+        user_input=user_input,
+        agent_name=agent_name,
+        tool_name=tool_name,
+        tool_args=tool_args,
+    )

@@ -2,6 +2,8 @@ agents:
   default:
     system: "You are a helpful assistant"
     model: fast
+    tools:
+      - echo
 
   researcher:
     system: "You provide precise, structured answers"
