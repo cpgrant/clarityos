@@ -4,10 +4,15 @@ agents:
     model: fast
     tools:
       - echo
+      - get_time
+      - read_file
 
   researcher:
     system: "You provide precise, structured answers"
     model: smart
+    tools:
+      - get_time
+      - read_file
 
   local:
     system: "You are a helpful assistant"
