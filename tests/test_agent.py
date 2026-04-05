@@ -50,9 +50,14 @@ class RunAgentTests(unittest.TestCase):
     def test_run_agent_success(self, _mock_call_model) -> None:
         result = agent.run_agent("hello", "default")
 
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["run_type"], "model")
         self.assertEqual(result["agent"], "default")
         self.assertEqual(result["provider"], "test")
         self.assertEqual(result["model"], "fake-model")
+        self.assertIsNone(result["tool"])
+        self.assertIsNone(result["tool_args"])
+        self.assertIsNone(result["tool_output"])
         self.assertEqual(result["output"], "ok")
 
     @patch.object(agent, "call_model", side_effect=fake_model)
@@ -61,6 +66,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["version"], "v0.2.2")
         self.assertEqual(payload["input"], "hello")
@@ -81,6 +87,8 @@ class RunAgentTests(unittest.TestCase):
             tool_args={"text": "tool says hi"},
         )
 
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["run_type"], "tool")
         self.assertEqual(result["agent"], "default")
         self.assertIsNone(result["prompt"])
         self.assertIsNone(result["provider"])
@@ -92,6 +100,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["agent"], "default")
         self.assertEqual(payload["tool_name"], "echo")
@@ -108,12 +117,15 @@ class RunAgentTests(unittest.TestCase):
             tool_args={},
         )
 
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["run_type"], "tool")
         self.assertEqual(result["tool"], "get_time")
         self.assertIn("utc", result["tool_output"])
         self.assertTrue(result["tool_output"]["utc"].endswith("+00:00"))
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["tool_name"], "get_time")
         self.assertEqual(payload["tool_args"], {})
@@ -128,12 +140,15 @@ class RunAgentTests(unittest.TestCase):
             tool_args={"path": "notes.txt"},
         )
 
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["run_type"], "tool")
         self.assertEqual(result["tool"], "read_file")
         self.assertEqual(result["tool_args"], {"path": "notes.txt"})
         self.assertEqual(result["tool_output"], "sample repo file\n")
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["tool_name"], "read_file")
         self.assertEqual(payload["tool_args"], {"path": "notes.txt"})
@@ -153,6 +168,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "researcher")
         self.assertEqual(payload["tool_name"], "echo")
@@ -173,6 +189,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "default")
         self.assertEqual(payload["tool_name"], "echo")
@@ -194,6 +211,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["tool_name"], "read_file")
         self.assertEqual(payload["tool_args"], {"path": "../outside.txt"})
@@ -212,6 +230,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["tool_name"], "read_file")
         self.assertEqual(payload["tool_args"], {"path": "missing.txt"})
@@ -225,6 +244,7 @@ class RunAgentTests(unittest.TestCase):
 
         payload = self.latest_log()
 
+        self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["version"], "v0.2.2")
         self.assertEqual(payload["input"], "hello")

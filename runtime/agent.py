@@ -35,6 +35,7 @@ def run_agent(
     prompt = None
     model_alias = None
     tool_output = None
+    run_type = "tool" if tool_name is not None else "model"
 
     try:
         agent_config = load_agent(agent_name)
@@ -54,6 +55,7 @@ def run_agent(
             trace_run(
                 {
                     "run_id": run_id,
+                    "run_type": run_type,
                     "status": "success",
                     "duration_ms": duration_ms,
                     "input": user_input,
@@ -69,6 +71,8 @@ def run_agent(
             )
 
             return {
+                "status": "success",
+                "run_type": run_type,
                 "agent": agent_name,
                 "prompt": prompt,
                 "provider": None,
@@ -86,6 +90,7 @@ def run_agent(
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
         trace_payload = {
             "run_id": run_id,
+            "run_type": run_type,
             "status": "error",
             "duration_ms": duration_ms,
             "input": user_input,
@@ -112,6 +117,7 @@ def run_agent(
     trace_run(
         {
             "run_id": run_id,
+            "run_type": run_type,
             "status": "success",
             "duration_ms": duration_ms,
             "input": user_input,
@@ -125,9 +131,14 @@ def run_agent(
     )
 
     return {
+        "status": "success",
+        "run_type": run_type,
         "agent": agent_name,
         "prompt": prompt,
         "provider": model_result["provider"],
         "model": model_result["model"],
+        "tool": None,
+        "tool_args": None,
+        "tool_output": None,
         "output": model_result["output"],
     }
