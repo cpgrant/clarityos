@@ -4,11 +4,9 @@ Minimal, explicit LLM execution runtime.
 
 ## Status
 
-- `v0.1` - execution
-- `v0.2` - traceability
-- `v0.2.1` - lightweight testing
-- `v0.2.2` - multi-provider support (OpenAI + Ollama)
-- `v0.3` - explicit tools
+- Current release: `v0.3`
+- Current focus: explicit tools with structured traces and API errors
+- Next target: `v0.4` - control and safety
 
 ## What It Does
 
@@ -227,6 +225,16 @@ The tests cover:
 - deterministic testing
 - minimal architecture
 
-## Next
+## Roadmap
 
-`v0.4` - control and safety
+- `v0.1` - execution
+- `v0.2` - traceability
+- `v0.2.1` - lightweight testing
+- `v0.2.2` - multi-provider support
+- `v0.3` - explicit tools
+- `v0.4` - control and safety
+- `v0.5` - workflows
+- `v0.6` - queues and jobs
+- `v0.7` - memory and retrieval
+- `v0.8` - multi-agent coordination
+- `v0.9` - production hardening
