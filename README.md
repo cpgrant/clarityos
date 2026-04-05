@@ -242,6 +242,69 @@ The tests cover:
 - explicit tool execution
 - API error mapping
 
+## v0.3 Test Checklist
+
+1. Run the automated tests:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+2. Start the API:
+
+```bash
+source .venv/bin/activate
+uvicorn api.main:app --reload
+```
+
+3. Verify a model run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply"}'
+```
+
+4. Verify the built-in tools:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"echo","tool_args":{"text":"hello from tool"}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"get_time","tool_args":{}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"read_file","tool_args":{"path":"README.md"}}'
+```
+
+5. Verify safety behavior:
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"read_file","tool_args":{"path":"../.bashrc"}}'
+```
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"read_file","tool_args":{"path":"missing.txt"}}'
+```
+
+6. Inspect the latest trace:
+
+```bash
+scripts/show_latest_log.sh
+```
+
 ## Design Principles
 
 - explicit over implicit
