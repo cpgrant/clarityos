@@ -5,7 +5,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
-TRACE_VERSION = "v0.2.2"
+TRACE_VERSION = "v0.3"
 
 
 def trace_run(data: dict) -> Path:

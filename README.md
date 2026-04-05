@@ -8,21 +8,22 @@ Minimal, explicit LLM execution runtime.
 - `v0.2` - traceability
 - `v0.2.1` - lightweight testing
 - `v0.2.2` - multi-provider support (OpenAI + Ollama)
+- `v0.3` - explicit tools
 
 ## What It Does
 
 Given an input, ClarityOS:
 
 1. Loads agent config from YAML
-2. Builds a prompt
-3. Calls a model
-4. Returns a response
+2. Either builds a prompt or executes an allowed tool
+3. Calls a model or returns a tool result
+4. Returns a structured response
 5. Writes a full execution trace
 
 ## Architecture
 
 ```text
-API -> Agent -> Prompt -> Model -> Response
+API -> Agent -> Prompt/Tool -> Model/Tool Result -> Response
 ```
 
 ## Project Structure
@@ -39,11 +40,13 @@ clarityos/
 │   ├── agent.py
 │   ├── model.py
 │   ├── prompt_builder.py
-│   └── trace.py
+│   ├── trace.py
+│   └── tools.py
 ├── scripts/
 │   └── show_latest_log.sh
 ├── tests/
-│   └── test_agent.py
+│   ├── test_agent.py
+│   └── test_api.py
 ├── requirements.txt
 └── README.md
 ```
@@ -118,13 +121,36 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"input":"Explain agents simply","agent":"local"}'
 ```
 
+Run an allowed tool directly:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"echo","tool_args":{"text":"hello from tool"}}'
+```
+
+Read a repo file with a safe tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"default","tool":"read_file","tool_args":{"path":"README.md"}}'
+```
+
 The `/run` response returns:
 
+- `status`
+- `run_type`
 - `agent`
 - `prompt`
 - `provider`
 - `model`
+- `tool`
+- `tool_args`
+- `tool_output`
 - `output`
+
+For tool runs, invalid requests return structured JSON errors with HTTP `400` or `404` instead of a generic internal server error.
 
 ## Logs
 
@@ -138,9 +164,10 @@ Success log example:
 
 ```json
 {
-  "version": "v0.2.2",
+  "version": "v0.3",
   "timestamp": "...",
   "run_id": "...",
+  "run_type": "model",
   "status": "success",
   "duration_ms": 12.3,
   "input": "...",
@@ -157,10 +184,16 @@ Error logs include:
 
 ```json
 {
-  "version": "v0.2.2",
+  "version": "v0.3",
+  "run_type": "tool",
   "status": "error",
+  "tool_name": "read_file",
+  "tool_args": {
+    "path": "../.bashrc"
+  },
   "error_type": "...",
-  "error_message": "..."
+  "error_message": "...",
+  "tool_error": "..."
 }
 ```
 
@@ -184,6 +217,8 @@ The tests cover:
 - error path
 - deterministic fake-model execution
 - trace creation
+- explicit tool execution
+- API error mapping
 
 ## Design Principles
 
@@ -194,4 +229,4 @@ The tests cover:
 
 ## Next
 
-`v0.3` - tools
+`v0.4` - control and safety

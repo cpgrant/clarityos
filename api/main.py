@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 
 from runtime.agent import run_agent
 
-app = FastAPI(title="ClarityOS", version="0.2.2")
+app = FastAPI(title="ClarityOS", version="0.3.0")
 
 
 @app.get("/status")
