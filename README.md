@@ -158,7 +158,7 @@ Each run creates:
 logs/run_<timestamp>.json
 ```
 
-Success log example:
+Model-run success log example:
 
 ```json
 {
@@ -178,7 +178,31 @@ Success log example:
 }
 ```
 
-Error logs include:
+Tool-run success log example:
+
+```json
+{
+  "version": "v0.3",
+  "timestamp": "...",
+  "run_id": "...",
+  "run_type": "tool",
+  "status": "success",
+  "duration_ms": 1.2,
+  "input": "",
+  "agent": "default",
+  "prompt": null,
+  "model_alias": null,
+  "tool_name": "read_file",
+  "tool_args": {
+    "path": "README.md"
+  },
+  "tool_output": "...file contents...",
+  "tool_ok": true,
+  "output": "...file contents..."
+}
+```
+
+Tool-run error logs include:
 
 ```json
 {
