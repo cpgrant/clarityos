@@ -8,12 +8,19 @@ __pycache__/
 # Logs
 logs/
 
+# Runtime state
+artifacts/
+jobs/
+workers/
+workflows/
+
 # Secrets
 .env
 
 # Local tooling
 .codex
 *.tar.gz
+README_v03.md
 
 # OS
 .DS_Store
