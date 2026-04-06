@@ -1,11 +1,13 @@
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from runtime.artifact import artifact_summary, create_artifact
 from runtime.approval import (
     approval_matches_request,
     approval_summary,
@@ -15,12 +17,31 @@ from runtime.approval import (
 )
 from runtime.budget import estimate_tokens, load_budget
 from runtime.contracts import exception_from_tool_result
-from runtime.errors import ApprovalStateError, PolicyDeniedError
+from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
 from runtime.model import call_model
 from runtime.policy import PolicyAction, build_agent_policy, evaluate_policy, snapshot_policy
 from runtime.prompt_builder import build_prompt
 from runtime.trace import trace_run
 from runtime.tools import call_tool, get_tool_definition
+from runtime.workflow import (
+    attach_run_to_workflow,
+    complete_finish_step,
+    configure_retry_policy,
+    configure_subrun_policy,
+    create_workflow_state,
+    current_step,
+    fail_workflow,
+    load_workflow,
+    mark_action_completed,
+    register_artifact,
+    resume_from_approval,
+    resume_from_retry,
+    set_action_details,
+    wait_for_retry,
+    wait_for_approval,
+    workflow_snapshot,
+    write_workflow,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 AGENTS_CONFIG_PATH = BASE_DIR / "config" / "agents.yaml"
@@ -42,6 +63,7 @@ class RunState:
     budget_limits: dict | None = None
     budget_used: dict | None = None
     approval_record: dict | None = None
+    workflow: object | None = None
     decision_log: list[dict] = field(default_factory=list)
     source_attribution: dict = field(
         default_factory=lambda: {
@@ -189,6 +211,7 @@ def trace_payload_base(
             "used": state.budget_used,
         },
         "decision_log": state.decision_log,
+        "workflow": workflow_snapshot(state.workflow) if state.workflow is not None else None,
         "source_attribution": state.source_attribution,
         "cost_accounting": state.cost_accounting,
         "context": {
@@ -200,6 +223,7 @@ def trace_payload_base(
 
 
 def approval_response(state: RunState, *, agent_name: str, tool_name: str | None, tool_args: dict | None) -> dict:
+    workflow_data = workflow_snapshot(state.workflow) if state.workflow is not None else None
     return {
         "status": "pending",
         "run_type": state.run_type,
@@ -215,11 +239,89 @@ def approval_response(state: RunState, *, agent_name: str, tool_name: str | None
         "tool_output": None,
         "tool_result": None,
         "approval": approval_summary(state.approval_record),
+        "workflow": workflow_data,
+        "artifacts": workflow_data["artifacts"] if workflow_data is not None else [],
         "output": None,
     }
 
 
+def retry_response(
+    state: RunState,
+    *,
+    agent_name: str,
+    tool_name: str | None,
+    tool_args: dict | None,
+    exc: Exception,
+) -> dict:
+    workflow_data = workflow_snapshot(state.workflow) if state.workflow is not None else None
+    return {
+        "status": "retry_wait",
+        "run_type": state.run_type,
+        "agent": agent_name,
+        "policy": state.policy_name,
+        "budget_limits": state.budget_limits,
+        "budget_used": state.budget_used,
+        "prompt": state.prompt,
+        "provider": None,
+        "model": state.model_alias if state.run_type == "model" else None,
+        "tool": tool_name,
+        "tool_args": tool_args,
+        "tool_output": None,
+        "tool_result": state.tool_result if state.run_type == "tool" else None,
+        "approval": (
+            approval_summary(state.approval_record)
+            if state.approval_record is not None
+            else None
+        ),
+        "workflow": workflow_data,
+        "artifacts": workflow_data["artifacts"] if workflow_data is not None else [],
+        "retry": (
+            workflow_data["retry_state"]
+            if workflow_data is not None
+            else None
+        ),
+        "error": {
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        },
+        "output": None,
+    }
+
+
+def persist_workflow(state: RunState) -> None:
+    if state.workflow is not None:
+        write_workflow(state.workflow)
+
+
+def create_result_artifact(state: RunState) -> dict:
+    if state.run_type == "tool":
+        return create_artifact(
+            workflow_id=state.workflow.workflow_id,
+            run_id=state.run_id,
+            name="result",
+            kind="tool_output",
+            value=state.tool_output,
+            metadata={
+                "tool": state.tool_result["name"],
+                "tool_args": state.tool_result["input"]["args"],
+            },
+        )
+
+    return create_artifact(
+        workflow_id=state.workflow.workflow_id,
+        run_id=state.run_id,
+        name="result",
+        kind="model_output",
+        value=state.model_result["output"],
+        metadata={
+            "provider": state.model_result["provider"],
+            "model": state.model_result["model"],
+        },
+    )
+
+
 def success_response(state: RunState, *, agent_name: str) -> dict:
+    workflow_data = workflow_snapshot(state.workflow) if state.workflow is not None else None
     if state.run_type == "tool":
         return {
             "status": "success",
@@ -240,6 +342,8 @@ def success_response(state: RunState, *, agent_name: str) -> dict:
                 if state.approval_record is not None
                 else None
             ),
+            "workflow": workflow_data,
+            "artifacts": workflow_data["artifacts"] if workflow_data is not None else [],
             "output": state.tool_output,
         }
 
@@ -262,6 +366,8 @@ def success_response(state: RunState, *, agent_name: str) -> dict:
             if state.approval_record is not None
             else None
         ),
+        "workflow": workflow_data,
+        "artifacts": workflow_data["artifacts"] if workflow_data is not None else [],
         "output": state.model_result["output"],
     }
 
@@ -310,87 +416,79 @@ def tool_error_result(
     }
 
 
-def resolve_approval(
+def initialize_workflow(
     state: RunState,
     *,
+    agent_name: str,
+    user_input: str,
+    tool_name: str | None,
+    tool_args: dict | None,
     approval_id: str | None,
+    parent_run_id: str | None = None,
+    parent_workflow_id: str | None = None,
+    root_workflow_id: str | None = None,
+    workflow_depth: int = 0,
+) -> None:
+    if approval_id is None:
+        state.parent_run_id = parent_run_id
+        state.workflow = create_workflow_state(
+            run_id=state.run_id,
+            agent=agent_name,
+            run_type=state.run_type,
+            request={
+                "input": user_input,
+                "agent": agent_name,
+                "tool": tool_name,
+                "tool_args": tool_args,
+            },
+            parent_workflow_id=parent_workflow_id,
+            root_workflow_id=root_workflow_id,
+            depth=workflow_depth,
+        )
+        persist_workflow(state)
+        return
+
+    state.approval_record = get_approval(approval_id)
+    if not approval_matches_request(
+        state.approval_record,
+        user_input=user_input,
+        agent_name=agent_name,
+        tool_name=tool_name,
+        tool_args=tool_args,
+    ):
+        raise ValueError(f"Approval `{approval_id}` does not match the current request")
+
+    state.workflow = load_workflow(state.approval_record["workflow_id"])
+    if state.workflow.agent != agent_name:
+        raise ValueError(f"Workflow `{state.workflow.workflow_id}` does not belong to agent `{agent_name}`")
+    if state.workflow.run_type != state.run_type:
+        raise ValueError(
+            f"Workflow `{state.workflow.workflow_id}` run type `{state.workflow.run_type}` does not match `{state.run_type}`"
+        )
+
+    attach_run_to_workflow(state.workflow, run_id=state.run_id)
+    persist_workflow(state)
+
+
+def configure_workflow_for_agent(state: RunState, *, agent_config: dict) -> None:
+    configure_retry_policy(state.workflow, agent_config.get("retries"))
+    configure_subrun_policy(state.workflow, agent_config.get("subruns"))
+    persist_workflow(state)
+
+
+def request_approval(
+    state: RunState,
+    *,
     user_input: str,
     agent_name: str,
     tool_name: str | None,
     tool_args: dict | None,
     action: dict,
     reason: str,
-) -> str:
-    if approval_id is not None:
-        state.approval_record = get_approval(approval_id)
-        if not approval_matches_request(
-            state.approval_record,
-            user_input=user_input,
-            agent_name=agent_name,
-            tool_name=tool_name,
-            tool_args=tool_args,
-        ):
-            raise ValueError(f"Approval `{approval_id}` does not match the current request")
-
-        if state.approval_record["status"] == "pending":
-            append_decision(
-                state,
-                stage="approval_pending",
-                allowed=False,
-                requires_approval=True,
-                reason=f"Approval `{approval_id}` is still pending",
-                approval_id=approval_id,
-                target=action,
-            )
-            state.cost_accounting["operations"]["approvals_requested"] += 1
-            return "pending"
-
-        if state.approval_record["status"] == "approved":
-            state.approval_record = mark_approval_resumed(
-                approval_id,
-                resumed_run_id=state.run_id,
-            )
-            state.parent_run_id = state.approval_record["requested_run_id"]
-            append_decision(
-                state,
-                stage="approval_resumed",
-                allowed=True,
-                requires_approval=False,
-                reason=f"Approval `{approval_id}` was approved and resumed",
-                approval_id=approval_id,
-                target=action,
-            )
-            state.cost_accounting["operations"]["approvals_resumed"] += 1
-            return "approved"
-
-        if state.approval_record["status"] == "resumed":
-            state.parent_run_id = state.approval_record["requested_run_id"]
-            append_decision(
-                state,
-                stage="approval_resumed",
-                allowed=True,
-                requires_approval=False,
-                reason=f"Approval `{approval_id}` was already resumed",
-                approval_id=approval_id,
-                target=action,
-            )
-            state.cost_accounting["operations"]["approvals_resumed"] += 1
-            return "approved"
-
-        if state.approval_record["status"] == "denied":
-            raise PolicyDeniedError(
-                f"Approval `{approval_id}` was denied",
-                capability=action["capability"],
-                policy_name=state.policy_name,
-            )
-
-        raise ApprovalStateError(
-            f"Approval `{approval_id}` is `{state.approval_record['status']}` and cannot be resumed",
-            approval_id=approval_id,
-        )
-
+) -> None:
     state.approval_record = create_approval(
         run_id=state.run_id,
+        workflow_id=state.workflow.workflow_id,
         agent=agent_name,
         policy_name=state.policy_name,
         action=action,
@@ -411,8 +509,112 @@ def resolve_approval(
         approval_id=state.approval_record["approval_id"],
         target=action,
     )
+    wait_for_approval(
+        state.workflow,
+        approval_id=state.approval_record["approval_id"],
+        details={"reason": reason},
+    )
+    persist_workflow(state)
     state.cost_accounting["operations"]["approvals_requested"] += 1
-    return "pending"
+
+
+def approved_action_matches_request(
+    state: RunState,
+    *,
+    action: dict,
+) -> bool:
+    if state.approval_record is None:
+        return False
+
+    if state.approval_record["status"] not in {"approved", "resumed"}:
+        return False
+
+    approved_action = state.approval_record.get("action", {})
+    for key, value in action.items():
+        if value is not None and approved_action.get(key) != value:
+            return False
+
+    return True
+
+
+def approval_resumed_already_logged(state: RunState) -> bool:
+    return any(entry["stage"] == "approval_resumed" for entry in state.decision_log)
+
+
+def retry_error_details(state: RunState, exc: Exception) -> dict:
+    if state.tool_result is not None and not state.tool_result.get("ok", False):
+        error = state.tool_result.get("error") or {}
+        return {
+            "failure_type": error.get("failure_type", "tool_error"),
+            "error_type": error.get("error_type", type(exc).__name__),
+            "message": error.get("message", str(exc)),
+            "retryable": bool(error.get("retryable", False)),
+        }
+
+    retryable = isinstance(exc, (TimeoutError, ConnectionError)) or (
+        isinstance(exc, RuntimeError)
+        and not isinstance(exc, (BudgetExceededError, ApprovalStateError))
+    )
+    return {
+        "failure_type": "runtime_error",
+        "error_type": type(exc).__name__,
+        "message": str(exc),
+        "retryable": retryable,
+    }
+
+
+def can_schedule_retry(state: RunState, exc: Exception) -> bool:
+    if state.workflow is None:
+        return False
+
+    error = retry_error_details(state, exc)
+    return error["retryable"] and state.workflow.retry_policy["max_attempts"] > 0 and state.workflow.retry_state["retries_remaining"] > 0
+
+
+def finalize_retry_wait(
+    state: RunState,
+    *,
+    budget: Any,
+    agent_name: str,
+    user_input: str,
+    tool_name: str | None,
+    tool_args: dict | None,
+    exc: Exception,
+) -> dict:
+    state.budget_used = budget.usage_snapshot()
+    retry_state = workflow_snapshot(state.workflow)["retry_state"]
+    set_output_source(
+        state,
+        "retry",
+        token_estimate=estimate_tokens(retry_state),
+        attempts_used=retry_state["attempts_used"],
+        next_retry_at=retry_state["next_retry_at"],
+    )
+    trace_payload = {
+        **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="retry_wait"),
+        "result": {
+            "retry": retry_state,
+            "error": {
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            },
+        },
+    }
+    if tool_name is not None:
+        trace_payload["result"]["tool"] = (
+            state.tool_result
+            if state.tool_result is not None
+            else tool_error_result(state, tool_name=tool_name, tool_args=tool_args, exc=exc)["tool"]
+        )
+
+    trace_run(trace_payload)
+    return retry_response(
+        state,
+        agent_name=agent_name,
+        tool_name=tool_name,
+        tool_args=tool_args,
+        exc=exc,
+    )
 
 
 def finalize_pending_approval(
@@ -445,7 +647,125 @@ def finalize_pending_approval(
     return approval_response(state, agent_name=agent_name, tool_name=tool_name, tool_args=tool_args)
 
 
-def run_tool_path(
+def execute_approval_wait_step(
+    state: RunState,
+    *,
+    budget: Any,
+    agent_name: str,
+    user_input: str,
+    tool_name: str | None,
+    tool_args: dict | None,
+) -> dict | None:
+    approval_id = current_step(state.workflow).details["approval_id"]
+    state.approval_record = get_approval(approval_id)
+    action = state.approval_record["action"]
+
+    if state.approval_record["status"] == "pending":
+        append_decision(
+            state,
+            stage="approval_pending",
+            allowed=False,
+            requires_approval=True,
+            reason=f"Approval `{approval_id}` is still pending",
+            approval_id=approval_id,
+            target=action,
+        )
+        return finalize_pending_approval(
+            state,
+            budget=budget,
+            agent_name=agent_name,
+            user_input=user_input,
+            tool_name=tool_name,
+            tool_args=tool_args,
+        )
+
+    if state.approval_record["status"] == "approved":
+        state.approval_record = mark_approval_resumed(
+            approval_id,
+            resumed_run_id=state.run_id,
+        )
+
+    if state.approval_record["status"] == "resumed":
+        state.parent_run_id = state.approval_record["requested_run_id"]
+        resume_from_approval(state.workflow, approval_id=approval_id)
+        persist_workflow(state)
+        append_decision(
+            state,
+            stage="approval_resumed",
+            allowed=True,
+            requires_approval=False,
+            reason=f"Approval `{approval_id}` was resumed",
+            approval_id=approval_id,
+            target=action,
+        )
+        state.cost_accounting["operations"]["approvals_resumed"] += 1
+        return None
+
+    if state.approval_record["status"] == "denied":
+        raise PolicyDeniedError(
+            f"Approval `{approval_id}` was denied",
+            capability=action["capability"],
+            policy_name=state.policy_name,
+        )
+
+    raise ApprovalStateError(
+        f"Approval `{approval_id}` is `{state.approval_record['status']}` and cannot be resumed",
+        approval_id=approval_id,
+    )
+
+
+def execute_retry_wait_step(
+    state: RunState,
+    *,
+    budget: Any,
+    agent_name: str,
+    user_input: str,
+    tool_name: str | None,
+    tool_args: dict | None,
+) -> dict | None:
+    retry_step = current_step(state.workflow)
+    next_retry_at = retry_step.details["next_retry_at"]
+    if next_retry_at is not None and datetime.now(timezone.utc) < datetime.fromisoformat(next_retry_at):
+        error = retry_step.details["error"]
+        state.budget_used = budget.usage_snapshot()
+        set_output_source(
+            state,
+            "retry",
+            token_estimate=estimate_tokens(error),
+            next_retry_at=next_retry_at,
+            attempt=retry_step.details["attempt"],
+        )
+        trace_run(
+            {
+                **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="retry_wait"),
+                "result": {
+                    "retry": dict(state.workflow.retry_state),
+                    "error": error,
+                },
+            }
+        )
+        return retry_response(
+            state,
+            agent_name=agent_name,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            exc=RuntimeError(error["message"]),
+        )
+
+    append_decision(
+        state,
+        stage="retry_resumed",
+        allowed=True,
+        requires_approval=False,
+        reason=f"Retry attempt {retry_step.details['attempt']} is resuming",
+        target={"attempt": retry_step.details["attempt"]},
+    )
+    resume_from_retry(state.workflow)
+    persist_workflow(state)
+    return None
+
+
+def execute_tool_step(
     state: RunState,
     *,
     budget: Any,
@@ -456,7 +776,7 @@ def run_tool_path(
     tool_name: str,
     tool_args: dict | None,
     approval_id: str | None,
-) -> dict:
+) -> dict | None:
     allowed_tools = agent_config.get("tools", []) or []
     if tool_args is not None and not isinstance(tool_args, dict):
         raise ValueError("Tool arguments must be an object")
@@ -480,6 +800,13 @@ def run_tool_path(
         path=(tool_args or {}).get(tool_definition.get("path_arg", "")),
         command=tool_definition.get("command"),
     )
+    set_action_details(
+        state.workflow,
+        tool=tool_name,
+        args=tool_args or {},
+        capability=action.capability,
+    )
+    persist_workflow(state)
     decision = evaluate_policy(policy, action)
     append_decision(
         state,
@@ -497,30 +824,42 @@ def run_tool_path(
 
     if not decision.allowed:
         if decision.requires_approval:
-            approval_status = resolve_approval(
-                state,
-                approval_id=approval_id,
-                user_input=user_input,
-                agent_name=agent_name,
-                tool_name=tool_name,
-                tool_args=tool_args,
-                action={
-                    "capability": action.capability,
-                    "tool": tool_name,
-                    "path": action.path,
-                    "command": action.command,
-                },
-                reason=decision.reason,
-            )
-            if approval_status == "pending":
-                return finalize_pending_approval(
+            approval_action = {
+                "capability": action.capability,
+                "tool": tool_name,
+                "path": action.path,
+                "command": action.command,
+            }
+            if approved_action_matches_request(state, action=approval_action):
+                if state.approval_record["status"] == "approved":
+                    state.approval_record = mark_approval_resumed(
+                        state.approval_record["approval_id"],
+                        resumed_run_id=state.run_id,
+                    )
+                if state.parent_run_id is None:
+                    state.parent_run_id = state.approval_record["requested_run_id"]
+                if not approval_resumed_already_logged(state):
+                    append_decision(
+                        state,
+                        stage="approval_resumed",
+                        allowed=True,
+                        requires_approval=False,
+                        reason=f"Approval `{state.approval_record['approval_id']}` satisfies the action",
+                        approval_id=state.approval_record["approval_id"],
+                        target=approval_action,
+                    )
+                    state.cost_accounting["operations"]["approvals_resumed"] += 1
+            else:
+                request_approval(
                     state,
-                    budget=budget,
-                    agent_name=agent_name,
                     user_input=user_input,
+                    agent_name=agent_name,
                     tool_name=tool_name,
                     tool_args=tool_args,
+                    action=approval_action,
+                    reason=decision.reason,
                 )
+                return None
         else:
             raise PolicyDeniedError(
                 decision.reason,
@@ -543,20 +882,12 @@ def run_tool_path(
         token_estimate=estimate_tokens(state.tool_output),
         tool=state.tool_result["name"],
     )
-
-    trace_run(
-        {
-            **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="success"),
-            "result": {
-                "tool": state.tool_result,
-                "output": state.tool_output,
-            },
-        }
-    )
-    return success_response(state, agent_name=agent_name)
+    mark_action_completed(state.workflow)
+    persist_workflow(state)
+    return None
 
 
-def run_model_path(
+def execute_model_step(
     state: RunState,
     *,
     budget: Any,
@@ -565,7 +896,7 @@ def run_model_path(
     agent_config: dict,
     user_input: str,
     approval_id: str | None,
-) -> dict:
+) -> dict | None:
     budget.consume_step()
     state.prompt = build_prompt(user_input=user_input, config=agent_config)
     state.model_alias = agent_config["model"]
@@ -581,6 +912,12 @@ def run_model_path(
         token_estimate=estimate_tokens(state.prompt),
         model_alias=state.model_alias,
     )
+    set_action_details(
+        state.workflow,
+        model_alias=state.model_alias,
+        capability="model_call",
+    )
+    persist_workflow(state)
 
     decision = evaluate_policy(
         policy,
@@ -604,29 +941,41 @@ def run_model_path(
 
     if not decision.allowed:
         if decision.requires_approval:
-            approval_status = resolve_approval(
-                state,
-                approval_id=approval_id,
-                user_input=user_input,
-                agent_name=agent_name,
-                tool_name=None,
-                tool_args=None,
-                action={
-                    "capability": "model_call",
-                    "model_alias": state.model_alias,
-                    "command": state.model_alias,
-                },
-                reason=decision.reason,
-            )
-            if approval_status == "pending":
-                return finalize_pending_approval(
+            approval_action = {
+                "capability": "model_call",
+                "model_alias": state.model_alias,
+                "command": state.model_alias,
+            }
+            if approved_action_matches_request(state, action=approval_action):
+                if state.approval_record["status"] == "approved":
+                    state.approval_record = mark_approval_resumed(
+                        state.approval_record["approval_id"],
+                        resumed_run_id=state.run_id,
+                    )
+                if state.parent_run_id is None:
+                    state.parent_run_id = state.approval_record["requested_run_id"]
+                if not approval_resumed_already_logged(state):
+                    append_decision(
+                        state,
+                        stage="approval_resumed",
+                        allowed=True,
+                        requires_approval=False,
+                        reason=f"Approval `{state.approval_record['approval_id']}` satisfies the action",
+                        approval_id=state.approval_record["approval_id"],
+                        target=approval_action,
+                    )
+                    state.cost_accounting["operations"]["approvals_resumed"] += 1
+            else:
+                request_approval(
                     state,
-                    budget=budget,
-                    agent_name=agent_name,
                     user_input=user_input,
+                    agent_name=agent_name,
                     tool_name=None,
                     tool_args=None,
+                    action=approval_action,
+                    reason=decision.reason,
                 )
+                return None
         else:
             raise PolicyDeniedError(
                 decision.reason,
@@ -647,20 +996,127 @@ def run_model_path(
         provider=state.model_result["provider"],
         model=state.model_result["model"],
     )
+    mark_action_completed(state.workflow)
+    persist_workflow(state)
+    return None
 
-    trace_run(
-        {
-            **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="success"),
-            "result": {
-                "model": {
-                    "provider": state.model_result["provider"],
-                    "model": state.model_result["model"],
+
+def execute_finish_step(
+    state: RunState,
+    *,
+    agent_name: str,
+    user_input: str,
+) -> dict:
+    artifact = create_result_artifact(state)
+    register_artifact(state.workflow, artifact_summary(artifact))
+    complete_finish_step(state.workflow)
+    persist_workflow(state)
+
+    if state.run_type == "tool":
+        trace_run(
+            {
+                **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="success"),
+                "result": {
+                    "tool": state.tool_result,
+                    "output": state.tool_output,
                 },
-                "output": state.model_result["output"],
-            },
-        }
-    )
+            }
+        )
+    else:
+        trace_run(
+            {
+                **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="success"),
+                "result": {
+                    "model": {
+                        "provider": state.model_result["provider"],
+                        "model": state.model_result["model"],
+                    },
+                    "output": state.model_result["output"],
+                },
+            }
+        )
+
     return success_response(state, agent_name=agent_name)
+
+
+def run_workflow(
+    state: RunState,
+    *,
+    budget: Any,
+    policy: dict,
+    agent_name: str,
+    agent_config: dict,
+    user_input: str,
+    tool_name: str | None,
+    tool_args: dict | None,
+    approval_id: str | None,
+) -> dict:
+    while True:
+        step = current_step(state.workflow)
+        if step.step_type == "retry_wait":
+            response = execute_retry_wait_step(
+                state,
+                budget=budget,
+                agent_name=agent_name,
+                user_input=user_input,
+                tool_name=tool_name,
+                tool_args=tool_args,
+            )
+            if response is not None:
+                return response
+            continue
+
+        if step.step_type == "approval_wait":
+            response = execute_approval_wait_step(
+                state,
+                budget=budget,
+                agent_name=agent_name,
+                user_input=user_input,
+                tool_name=tool_name,
+                tool_args=tool_args,
+            )
+            if response is not None:
+                return response
+            continue
+
+        if step.step_type == "tool":
+            response = execute_tool_step(
+                state,
+                budget=budget,
+                policy=policy,
+                agent_name=agent_name,
+                agent_config=agent_config,
+                user_input=user_input,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                approval_id=approval_id,
+            )
+            if response is not None:
+                return response
+            continue
+
+        if step.step_type == "model":
+            response = execute_model_step(
+                state,
+                budget=budget,
+                policy=policy,
+                agent_name=agent_name,
+                agent_config=agent_config,
+                user_input=user_input,
+                approval_id=approval_id,
+            )
+            if response is not None:
+                return response
+            continue
+
+        if step.step_type == "finish":
+            return execute_finish_step(
+                state,
+                agent_name=agent_name,
+                user_input=user_input,
+            )
+
+        raise ValueError(f"Unsupported workflow step type: {step.step_type}")
 
 
 def run_agent(
@@ -669,6 +1125,10 @@ def run_agent(
     tool_name: str | None = None,
     tool_args: dict | None = None,
     approval_id: str | None = None,
+    parent_run_id: str | None = None,
+    parent_workflow_id: str | None = None,
+    root_workflow_id: str | None = None,
+    workflow_depth: int = 0,
 ) -> dict:
     state = RunState(
         run_id=str(uuid.uuid4()),
@@ -677,7 +1137,20 @@ def run_agent(
     )
 
     try:
+        initialize_workflow(
+            state,
+            agent_name=agent_name,
+            user_input=user_input,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            approval_id=approval_id,
+            parent_run_id=parent_run_id,
+            parent_workflow_id=parent_workflow_id,
+            root_workflow_id=root_workflow_id,
+            workflow_depth=workflow_depth,
+        )
         agent_config = load_agent(agent_name)
+        configure_workflow_for_agent(state, agent_config=agent_config)
         policy = build_agent_policy(agent_config)
         state.policy_name = policy["name"]
         state.policy_snapshot = snapshot_policy(policy)
@@ -690,32 +1163,56 @@ def run_agent(
             token_estimate=estimate_tokens(user_input),
             source="request",
         )
-
-        if tool_name is not None:
-            return run_tool_path(
-                state,
-                budget=budget,
-                policy=policy,
-                agent_name=agent_name,
-                agent_config=agent_config,
-                user_input=user_input,
-                tool_name=tool_name,
-                tool_args=tool_args,
-                approval_id=approval_id,
-            )
-
-        return run_model_path(
+        return run_workflow(
             state,
             budget=budget,
             policy=policy,
             agent_name=agent_name,
             agent_config=agent_config,
             user_input=user_input,
+            tool_name=tool_name,
+            tool_args=tool_args,
             approval_id=approval_id,
         )
     except Exception as exc:
         if "budget" in locals():
             state.budget_used = budget.usage_snapshot()
+        if "budget" in locals() and can_schedule_retry(state, exc):
+            error = retry_error_details(state, exc)
+            append_decision(
+                state,
+                stage="retry_scheduled",
+                allowed=True,
+                requires_approval=False,
+                reason=f"Retry scheduled after {error['error_type']}: {error['message']}",
+                target={
+                    "attempt": state.workflow.retry_state["attempts_used"] + 1,
+                    "failure_type": error["failure_type"],
+                },
+            )
+            wait_for_retry(
+                state.workflow,
+                error_type=error["error_type"],
+                message=error["message"],
+                retryable=error["retryable"],
+            )
+            persist_workflow(state)
+            return finalize_retry_wait(
+                state,
+                budget=budget,
+                agent_name=agent_name,
+                user_input=user_input,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                exc=exc,
+            )
+        if state.workflow is not None:
+            fail_workflow(
+                state.workflow,
+                error_type=type(exc).__name__,
+                message=str(exc),
+            )
+            persist_workflow(state)
 
         trace_payload = {
             **trace_payload_base(state, agent_name=agent_name, user_input=user_input, status="error"),

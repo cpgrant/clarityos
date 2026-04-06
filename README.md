@@ -4,9 +4,9 @@ Minimal, explicit LLM execution runtime.
 
 ## Status
 
-- Current release: `v0.4`
-- Current focus: policy enforcement, run budgets, tool contracts, trace schema v2, and approval-gated runs
-- Next target: `v0.5` durable workflows
+- Current release: `v0.5`
+- Current focus: `v0.6` queue + workers
+- Next target: `v0.7` typed memory + bounded retrieval
 
 ## What It Does
 
@@ -29,6 +29,7 @@ API -> Agent -> Prompt/Tool -> Model/Tool Result -> Response
 ```text
 clarityos/
 ├── approvals/
+├── artifacts/
 ├── api/
 │   └── main.py
 ├── config/
@@ -39,19 +40,27 @@ clarityos/
 ├── runtime/
 │   ├── agent.py
 │   ├── approval.py
+│   ├── artifact.py
 │   ├── budget.py
 │   ├── contracts.py
+│   ├── control_plane.py
 │   ├── errors.py
 │   ├── model.py
 │   ├── policy.py
 │   ├── prompt_builder.py
 │   ├── trace.py
-│   └── tools.py
+│   ├── tools.py
+│   ├── workflow.py
+│   └── workflow_runner.py
+├── workflows/
 ├── scripts/
 │   └── show_latest_log.sh
 ├── tests/
 │   ├── test_agent.py
-│   └── test_api.py
+│   ├── test_api.py
+│   ├── test_control_plane.py
+│   ├── test_workflow.py
+│   └── test_workflow_runner.py
 ├── requirements.txt
 └── README.md
 ```
@@ -102,7 +111,15 @@ Health check:
 curl http://127.0.0.1:8000/status
 ```
 
-Run the default agent:
+Start a workflow with the default agent:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workflows \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply"}'
+```
+
+Compatibility alias using `/run`:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/run \
@@ -166,6 +183,9 @@ The `/run` response returns:
 - `tool_output`
 - `tool_result`
 - `approval`
+- `workflow`
+- `artifacts`
+- `retry` when a retryable failure is waiting on resume
 - `output`
 
 Invalid requests return structured JSON errors with HTTP `400`, `403`, `404`, `409`, or `429` instead of a generic internal server error.
@@ -176,6 +196,17 @@ Approval endpoints:
 - `POST /approvals/{approval_id}/approve`
 - `POST /approvals/{approval_id}/deny`
 - `POST /approvals/{approval_id}/abort`
+
+Artifact endpoint:
+
+- `GET /artifacts/{artifact_id}`
+
+Workflow endpoint:
+
+- `POST /workflows`
+- `GET /workflows/{workflow_id}` returns an operator-friendly control-plane view
+- `POST /workflows/{workflow_id}/resume`
+- `POST /workflows/{workflow_id}/subruns`
 
 End-to-end approval flow:
 
@@ -194,6 +225,26 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"agent":"supervised","tool":"echo","tool_args":{"text":"needs approval"},"approval_id":"<approval_id>"}'
 ```
 
+You can also resume directly through the workflow:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workflows/<workflow_id>/resume
+```
+
+Retryable failures are persisted as workflow state too. When a run hits a retryable error and still has retry budget left, the workflow moves to a `retry_wait:*` step and returns `status: "retry_wait"` with retry counters and the next retry timestamp.
+
+Bounded child workflows can be started from an existing workflow too:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workflows/<workflow_id>/subruns \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","input":"Summarize the parent result"}'
+```
+
+Child workflows inherit explicit lineage through `parent_workflow_id`, `root_workflow_id`, `depth`, and `child_workflow_ids`, and spawning is bounded by the parent workflow's configured subrun policy.
+
+The workflow status endpoint now pulls the related control-plane state together in one response: current step details, approval summaries, artifact summaries, child workflow snapshots, and next valid actions like resume, approve, or spawn subrun.
+
 ## Logs
 
 Each run creates:
@@ -202,11 +253,23 @@ Each run creates:
 logs/run_<timestamp>.json
 ```
 
+Each workflow also persists a durable record:
+
+```text
+workflows/<workflow_id>.json
+```
+
+Successful runs also persist durable output artifacts:
+
+```text
+artifacts/<artifact_id>.json
+```
+
 Model-run success log example:
 
 ```json
 {
-  "version": "v0.4",
+  "version": "v0.5",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -232,6 +295,11 @@ Model-run success log example:
       "allowed": true
     }
   ],
+  "workflow": {
+    "workflow_id": "...",
+    "status": "succeeded",
+    "current_step_id": "finish_step"
+  },
   "source_attribution": {
     "input": [
       {
@@ -277,7 +345,7 @@ Tool-run success log example:
 
 ```json
 {
-  "version": "v0.4",
+  "version": "v0.5",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -288,6 +356,11 @@ Tool-run success log example:
   "agent": "default",
   "policy_snapshot": {
     "name": "safe_readonly"
+  },
+  "workflow": {
+    "workflow_id": "...",
+    "status": "succeeded",
+    "current_step_id": "finish_step"
   },
   "source_attribution": {
     "input": [
@@ -336,7 +409,7 @@ Tool-run error logs include:
 
 ```json
 {
-  "version": "v0.4",
+  "version": "v0.5",
   "run_type": "tool",
   "status": "error",
   "decision_log": [
@@ -377,7 +450,7 @@ Approval-pending logs include:
 
 ```json
 {
-  "version": "v0.4",
+  "version": "v0.5",
   "schema": "trace.v2",
   "run_type": "tool",
   "status": "pending",
@@ -391,6 +464,11 @@ Approval-pending logs include:
       "approval_id": "..."
     }
   ],
+  "workflow": {
+    "workflow_id": "...",
+    "status": "waiting",
+    "current_step_id": "approval_wait:..."
+  },
   "result": {
     "approval": {
       "approval_id": "...",
@@ -429,10 +507,17 @@ The tests cover:
 - explicit tool execution
 - policy denial
 - approval request and resume
+- workflow state transitions
+- workflow persistence and reload
+- stepwise workflow execution from the saved pointer
+- retry scheduling and retry resume guards
+- bounded child workflow lineage
+- durable workflow artifacts
+- workflow control-plane aggregation
 - budget exhaustion
 - API error mapping
 
-## v0.4 Test Checklist
+## v0.5 Test Checklist
 
 1. Run the automated tests:
 
@@ -510,7 +595,7 @@ scripts/show_latest_log.sh
 - `v0.2.2` - multi-provider support
 - `v0.3` - explicit tools
 - `v0.4` - control and safety
-- `v0.5` - workflows
+- `v0.5` - workflows and control plane
 - `v0.6` - queues and jobs
 - `v0.7` - memory and retrieval
 - `v0.8` - multi-agent coordination

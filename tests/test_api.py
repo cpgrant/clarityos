@@ -7,9 +7,9 @@ from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDenied
 
 
 class ApiTests(unittest.TestCase):
-    @patch.object(main, "run_agent")
-    def test_run_success_passthrough(self, mock_run_agent) -> None:
-        mock_run_agent.return_value = {
+    @patch.object(main, "start_workflow")
+    def test_run_success_passthrough(self, mock_start_workflow) -> None:
+        mock_start_workflow.return_value = {
             "status": "success",
             "run_type": "tool",
             "agent": "default",
@@ -30,8 +30,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["run_type"], "tool")
         self.assertEqual(response["tool_output"], "hello")
 
-    @patch.object(main, "run_agent", side_effect=ValueError("bad input"))
-    def test_run_value_error_returns_400(self, _mock_run_agent) -> None:
+    @patch.object(main, "start_workflow", side_effect=ValueError("bad input"))
+    def test_run_value_error_returns_400(self, _mock_start_workflow) -> None:
         response = main.run({"agent": "default"})
 
         self.assertEqual(response.status_code, 400)
@@ -46,8 +46,8 @@ class ApiTests(unittest.TestCase):
             },
         )
 
-    @patch.object(main, "run_agent", side_effect=FileNotFoundError("missing file"))
-    def test_run_missing_file_returns_404(self, _mock_run_agent) -> None:
+    @patch.object(main, "start_workflow", side_effect=FileNotFoundError("missing file"))
+    def test_run_missing_file_returns_404(self, _mock_start_workflow) -> None:
         response = main.run({"agent": "default"})
 
         self.assertEqual(response.status_code, 404)
@@ -62,8 +62,8 @@ class ApiTests(unittest.TestCase):
             },
         )
 
-    @patch.object(main, "run_agent", side_effect=RuntimeError("boom"))
-    def test_run_runtime_error_returns_500(self, _mock_run_agent) -> None:
+    @patch.object(main, "start_workflow", side_effect=RuntimeError("boom"))
+    def test_run_runtime_error_returns_500(self, _mock_start_workflow) -> None:
         response = main.run({"agent": "default"})
 
         self.assertEqual(response.status_code, 500)
@@ -80,14 +80,14 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(
         main,
-        "run_agent",
+        "start_workflow",
         side_effect=PolicyDeniedError(
             "policy says no",
             capability="model_call",
             policy_name="safe_readonly",
         ),
     )
-    def test_run_policy_denied_returns_403(self, _mock_run_agent) -> None:
+    def test_run_policy_denied_returns_403(self, _mock_start_workflow) -> None:
         response = main.run({"agent": "default"})
 
         self.assertEqual(response.status_code, 403)
@@ -104,13 +104,13 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(
         main,
-        "run_agent",
+        "start_workflow",
         side_effect=BudgetExceededError(
             "budget says stop",
             budget_name="max_tool_calls",
         ),
     )
-    def test_run_budget_exhausted_returns_429(self, _mock_run_agent) -> None:
+    def test_run_budget_exhausted_returns_429(self, _mock_start_workflow) -> None:
         response = main.run({"agent": "default"})
 
         self.assertEqual(response.status_code, 429)
@@ -125,19 +125,34 @@ class ApiTests(unittest.TestCase):
             },
         )
 
-    @patch.object(main, "run_agent")
-    def test_run_passes_approval_id(self, mock_run_agent) -> None:
-        mock_run_agent.return_value = {"status": "pending"}
+    @patch.object(main, "start_workflow")
+    def test_run_passes_approval_id(self, mock_start_workflow) -> None:
+        mock_start_workflow.return_value = {"status": "pending"}
 
         response = main.run({"agent": "default", "approval_id": "approval-123"})
 
         self.assertEqual(response["status"], "pending")
-        mock_run_agent.assert_called_once_with(
+        mock_start_workflow.assert_called_once_with(
             user_input="",
             agent_name="default",
             tool_name=None,
             tool_args=None,
             approval_id="approval-123",
+        )
+
+    @patch.object(main, "start_workflow")
+    def test_workflow_start_passthrough(self, mock_start_workflow) -> None:
+        mock_start_workflow.return_value = {"status": "success", "workflow": {"workflow_id": "wf-123"}}
+
+        response = main.workflow_start({"agent": "default", "tool": "echo", "tool_args": {"text": "hello"}})
+
+        self.assertEqual(response["status"], "success")
+        mock_start_workflow.assert_called_once_with(
+            user_input="",
+            agent_name="default",
+            tool_name="echo",
+            tool_args={"text": "hello"},
+            approval_id=None,
         )
 
     @patch.object(
@@ -153,6 +168,17 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(
         main,
+        "load_artifact",
+        return_value={"artifact_id": "artifact-123", "kind": "tool_output"},
+    )
+    def test_artifact_status_passthrough(self, _mock_load_artifact) -> None:
+        response = main.artifact_status("artifact-123")
+
+        self.assertEqual(response["artifact_id"], "artifact-123")
+        self.assertEqual(response["kind"], "tool_output")
+
+    @patch.object(
+        main,
         "approve_approval",
         return_value={"approval_id": "approval-123", "status": "approved"},
     )
@@ -161,6 +187,40 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response["approval_id"], "approval-123")
         self.assertEqual(response["status"], "approved")
+
+    @patch.object(
+        main,
+        "workflow_control_view",
+        return_value={"workflow_id": "workflow-123", "status": "waiting", "actions": {}},
+    )
+    def test_workflow_status_passthrough(self, _mock_workflow_control_view) -> None:
+        response = main.workflow_status("workflow-123")
+
+        self.assertEqual(response["workflow_id"], "workflow-123")
+        self.assertEqual(response["status"], "waiting")
+
+    @patch.object(main, "resume_workflow", return_value={"status": "success"})
+    def test_workflow_resume_passthrough(self, mock_resume_workflow) -> None:
+        response = main.workflow_resume("workflow-123")
+
+        self.assertEqual(response["status"], "success")
+        mock_resume_workflow.assert_called_once_with("workflow-123")
+
+    @patch.object(main, "start_child_workflow", return_value={"status": "success"})
+    def test_workflow_spawn_subrun_passthrough(self, mock_start_child_workflow) -> None:
+        response = main.workflow_spawn_subrun(
+            "workflow-123",
+            {"agent": "researcher", "tool": "echo", "tool_args": {"text": "hello"}},
+        )
+
+        self.assertEqual(response["status"], "success")
+        mock_start_child_workflow.assert_called_once_with(
+            "workflow-123",
+            user_input="",
+            agent_name="researcher",
+            tool_name="echo",
+            tool_args={"text": "hello"},
+        )
 
     @patch.object(
         main,

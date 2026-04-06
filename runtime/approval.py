@@ -47,6 +47,20 @@ def get_approval(approval_id: str) -> dict:
         return json.load(file)
 
 
+def list_approvals_for_workflow(workflow_id: str) -> list[dict]:
+    if not APPROVAL_DIR.is_dir():
+        return []
+
+    approvals = []
+    for path in sorted(APPROVAL_DIR.glob("*.json")):
+        with path.open(encoding="utf-8") as file:
+            approval = json.load(file)
+        if approval.get("workflow_id") == workflow_id:
+            approvals.append(approval)
+
+    return approvals
+
+
 def add_history_entry(approval: dict, state: str, *, actor: str) -> None:
     approval["history"].append(
         {
@@ -60,6 +74,7 @@ def add_history_entry(approval: dict, state: str, *, actor: str) -> None:
 def create_approval(
     *,
     run_id: str,
+    workflow_id: str,
     agent: str,
     policy_name: str,
     action: dict,
@@ -73,6 +88,7 @@ def create_approval(
         "created_at": timestamp,
         "updated_at": timestamp,
         "requested_run_id": run_id,
+        "workflow_id": workflow_id,
         "resumed_run_id": None,
         "agent": agent,
         "policy": policy_name,
@@ -155,6 +171,7 @@ def approval_summary(approval: dict) -> dict:
         "action": approval["action"],
         "reason": approval["reason"],
         "requested_run_id": approval["requested_run_id"],
+        "workflow_id": approval["workflow_id"],
         "resumed_run_id": approval["resumed_run_id"],
         "created_at": approval["created_at"],
         "updated_at": approval["updated_at"],

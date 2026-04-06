@@ -4,12 +4,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import runtime.artifact as artifact
 import runtime.approval as approval
 import runtime.agent as agent
 import runtime.contracts as contracts
 import runtime.policy as policy
 import runtime.trace as trace
 import runtime.tools as tools
+import runtime.workflow as workflow
 
 
 def fake_model(model_name: str, prompt: str) -> dict:
@@ -26,10 +28,14 @@ class RunAgentTests(unittest.TestCase):
         self.root_dir = Path(self.temp_dir.name)
         self.log_dir = self.root_dir / "logs"
         self.approvals_dir = self.root_dir / "approvals"
+        self.artifacts_dir = self.root_dir / "artifacts"
+        self.workflows_dir = self.root_dir / "workflows"
         self.repo_dir = self.root_dir / "repo"
         self.repo_dir.mkdir()
         self.log_dir.mkdir()
         self.approvals_dir.mkdir()
+        self.artifacts_dir.mkdir()
+        self.workflows_dir.mkdir()
         self.agents_config = self.root_dir / "agents.yaml"
         self.policies_config = self.root_dir / "policies.yaml"
         self.sample_file = self.repo_dir / "notes.txt"
@@ -123,6 +129,21 @@ agents:
       max_wall_clock_ms: 30000
     tools:
       - echo
+
+  retry_tool:
+    system: "You retry transient tool failures once"
+    model: fast
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    retries:
+      max_attempts: 1
+      backoff_seconds: 0
+    tools:
+      - echo
 """.strip()
             + "\n",
             encoding="utf-8",
@@ -175,6 +196,8 @@ policies:
         )
         self.trace_patcher = patch.object(trace, "LOG_DIR", self.log_dir)
         self.approval_dir_patcher = patch.object(approval, "APPROVAL_DIR", self.approvals_dir)
+        self.artifact_dir_patcher = patch.object(artifact, "ARTIFACT_DIR", self.artifacts_dir)
+        self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflows_dir)
         self.tools_base_dir_patcher = patch.object(tools, "BASE_DIR", self.repo_dir)
         self.agents_config_patcher = patch.object(agent, "AGENTS_CONFIG_PATH", self.agents_config)
         self.policies_config_patcher = patch.object(
@@ -183,6 +206,8 @@ policies:
         self.policy_base_dir_patcher = patch.object(policy, "BASE_DIR", self.repo_dir)
         self.trace_patcher.start()
         self.approval_dir_patcher.start()
+        self.artifact_dir_patcher.start()
+        self.workflow_dir_patcher.start()
         self.tools_base_dir_patcher.start()
         self.agents_config_patcher.start()
         self.policies_config_patcher.start()
@@ -191,6 +216,8 @@ policies:
     def tearDown(self) -> None:
         self.trace_patcher.stop()
         self.approval_dir_patcher.stop()
+        self.artifact_dir_patcher.stop()
+        self.workflow_dir_patcher.stop()
         self.tools_base_dir_patcher.stop()
         self.agents_config_patcher.stop()
         self.policies_config_patcher.stop()
@@ -217,6 +244,15 @@ policies:
         self.assertIsNone(result["tool_args"])
         self.assertIsNone(result["tool_output"])
         self.assertIsNone(result["tool_result"])
+        self.assertEqual(len(result["artifacts"]), 1)
+        saved_artifact = artifact.load_artifact(result["artifacts"][0]["artifact_id"])
+        self.assertEqual(saved_artifact["kind"], "model_output")
+        self.assertEqual(saved_artifact["value"], "ok")
+        self.assertEqual(result["workflow"]["status"], "succeeded")
+        self.assertEqual(result["workflow"]["steps"][0]["step_type"], "model")
+        saved_workflow = workflow.load_workflow(result["workflow"]["workflow_id"])
+        self.assertEqual(saved_workflow.status, "succeeded")
+        self.assertEqual(saved_workflow.artifacts[0]["artifact_id"], result["artifacts"][0]["artifact_id"])
         self.assertEqual(result["output"], "ok")
 
     @patch.object(agent, "call_model", side_effect=fake_model)
@@ -227,9 +263,11 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(payload["version"], "v0.4")
+        self.assertEqual(payload["version"], "v0.5")
         self.assertEqual(payload["schema"], "trace.v2")
         self.assertEqual(payload["agent"], "default")
+        self.assertEqual(payload["workflow"]["status"], "succeeded")
+        self.assertEqual(payload["workflow"]["current_step_id"], "finish_step")
         self.assertEqual(payload["policy_snapshot"]["name"], "safe_readonly")
         self.assertEqual(payload["context"]["input"], "hello")
         self.assertEqual(payload["context"]["model_alias"], "fast")
@@ -268,6 +306,12 @@ policies:
         self.assertEqual(result["tool_args"], {"text": "tool says hi"})
         self.assertEqual(result["tool_output"], "tool says hi")
         self.assertTrue(result["tool_result"]["ok"])
+        self.assertEqual(len(result["artifacts"]), 1)
+        saved_artifact = artifact.load_artifact(result["artifacts"][0]["artifact_id"])
+        self.assertEqual(saved_artifact["kind"], "tool_output")
+        self.assertEqual(saved_artifact["value"], "tool says hi")
+        self.assertEqual(result["workflow"]["status"], "succeeded")
+        self.assertEqual(result["workflow"]["steps"][0]["step_type"], "tool")
         self.assertEqual(result["tool_result"]["output"]["value"], "tool says hi")
         self.assertEqual(result["output"], "tool says hi")
 
@@ -276,6 +320,7 @@ policies:
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["agent"], "default")
+        self.assertEqual(payload["workflow"]["status"], "succeeded")
         self.assertEqual(payload["policy_snapshot"]["name"], "safe_readonly")
         self.assertEqual(payload["result"]["tool"]["name"], "echo")
         self.assertEqual(payload["result"]["tool"]["input"]["args"], {"text": "tool says hi"})
@@ -351,6 +396,7 @@ policies:
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "researcher")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["context"]["input"], "hello")
         self.assertEqual(payload["result"]["tool"]["name"], "echo")
         self.assertEqual(payload["result"]["tool"]["input"]["args"], {"text": "blocked"})
@@ -374,6 +420,7 @@ policies:
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "default")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["result"]["tool"]["name"], "echo")
         self.assertEqual(payload["result"]["tool"]["input"]["args"], {"text": "boom"})
         self.assertIsNone(payload["result"]["tool"]["output"])
@@ -396,6 +443,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["result"]["tool"]["name"], "read_file")
         self.assertEqual(payload["result"]["tool"]["input"]["args"], {"path": "../outside.txt"})
         self.assertIsNone(payload["result"]["tool"]["output"])
@@ -417,6 +465,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["result"]["tool"]["name"], "read_file")
         self.assertEqual(payload["result"]["tool"]["input"]["args"], {"path": "missing.txt"})
         self.assertIsNone(payload["result"]["tool"]["output"])
@@ -432,7 +481,8 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["version"], "v0.4")
+        self.assertEqual(payload["version"], "v0.5")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["context"]["input"], "hello")
         self.assertEqual(payload["agent"], "missing")
         self.assertIsNone(payload["context"]["prompt"])
@@ -454,6 +504,7 @@ policies:
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "blocked_model")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["policy_snapshot"]["name"], "no_model")
         self.assertEqual(payload["result"]["error"]["error_type"], "PolicyDeniedError")
         self.assertIn("Denied by policy `no_model`", payload["result"]["error"]["message"])
@@ -473,6 +524,7 @@ policies:
         self.assertEqual(payload["run_type"], "tool")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "tiny_tools")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["result"]["error"]["error_type"], "BudgetExceededError")
         self.assertEqual(payload["budget"]["used"]["tool_calls_used"], 0)
 
@@ -486,6 +538,7 @@ policies:
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["agent"], "tiny_tokens")
+        self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["result"]["error"]["error_type"], "BudgetExceededError")
         self.assertEqual(payload["budget"]["used"]["steps_used"], 1)
 
@@ -503,19 +556,63 @@ policies:
         self.assertIsNone(result["tool_output"])
         self.assertIsNone(result["tool_result"])
         self.assertEqual(result["approval"]["status"], "pending")
+        self.assertEqual(result["workflow"]["status"], "waiting")
+        self.assertEqual(result["approval"]["workflow_id"], result["workflow"]["workflow_id"])
 
         approval_record = approval.get_approval(result["approval"]["approval_id"])
         self.assertEqual(approval_record["status"], "pending")
         self.assertEqual(approval_record["request"]["tool_args"], {"text": "needs approval"})
+        self.assertEqual(approval_record["workflow_id"], result["workflow"]["workflow_id"])
+        saved_workflow = workflow.load_workflow(result["workflow"]["workflow_id"])
+        self.assertEqual(saved_workflow.status, "waiting")
+        self.assertEqual(saved_workflow.current_step_id, f"approval_wait:{result['approval']['approval_id']}")
 
         payload = self.latest_log()
 
         self.assertEqual(payload["status"], "pending")
+        self.assertEqual(payload["workflow"]["status"], "waiting")
         self.assertEqual(payload["result"]["approval"]["status"], "pending")
         self.assertEqual(payload["source_attribution"]["output"]["type"], "approval")
         self.assertTrue(payload["decision_log"][0]["requires_approval"])
         self.assertEqual(payload["decision_log"][1]["stage"], "approval_requested")
+        self.assertEqual(payload["decision_log"][2]["stage"], "approval_pending")
         self.assertEqual(payload["cost_accounting"]["operations"]["approvals_requested"], 1)
+
+    @patch.object(
+        agent,
+        "call_tool",
+        return_value=contracts.build_tool_failure(
+            name="echo",
+            args={"text": "retry me"},
+            exc=TimeoutError("transient timeout"),
+        ),
+    )
+    def test_run_agent_retryable_tool_failure_waits_for_retry(self, _mock_call_tool) -> None:
+        result = agent.run_agent(
+            "",
+            "retry_tool",
+            tool_name="echo",
+            tool_args={"text": "retry me"},
+        )
+
+        self.assertEqual(result["status"], "retry_wait")
+        self.assertEqual(result["workflow"]["status"], "waiting")
+        self.assertEqual(result["workflow"]["current_step_id"], "retry_wait:1")
+        self.assertEqual(result["retry"]["attempts_used"], 1)
+        self.assertEqual(result["retry"]["retries_remaining"], 0)
+        self.assertEqual(result["tool_result"]["error"]["retryable"], True)
+
+        saved_workflow = workflow.load_workflow(result["workflow"]["workflow_id"])
+        self.assertEqual(saved_workflow.status, "waiting")
+        self.assertEqual(saved_workflow.retry_state["attempts_used"], 1)
+        self.assertEqual(saved_workflow.current_step_id, "retry_wait:1")
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "retry_wait")
+        self.assertEqual(payload["workflow"]["status"], "waiting")
+        self.assertEqual(payload["decision_log"][-1]["stage"], "retry_scheduled")
+        self.assertEqual(payload["result"]["retry"]["attempts_used"], 1)
 
     def test_run_agent_tool_resumes_after_approval(self) -> None:
         pending_result = agent.run_agent(
@@ -540,13 +637,20 @@ policies:
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool_output"], "needs approval")
         self.assertEqual(result["approval"]["status"], "resumed")
+        self.assertEqual(result["workflow"]["status"], "succeeded")
+        self.assertEqual(result["workflow"]["current_step_id"], "finish_step")
+        saved_workflow = workflow.load_workflow(result["workflow"]["workflow_id"])
+        self.assertEqual(saved_workflow.status, "succeeded")
+        self.assertEqual(saved_workflow.latest_run_id, result["workflow"]["latest_run_id"])
 
         payload = self.latest_log()
 
         self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["workflow"]["status"], "succeeded")
         self.assertEqual(payload["parent_run_id"], pending_result["approval"]["requested_run_id"])
         self.assertEqual(payload["result"]["tool"]["output"]["value"], "needs approval")
-        self.assertEqual(payload["decision_log"][1]["stage"], "approval_resumed")
+        self.assertEqual(payload["decision_log"][0]["stage"], "approval_resumed")
+        self.assertEqual(payload["decision_log"][1]["stage"], "tool_policy_check")
         self.assertEqual(payload["cost_accounting"]["operations"]["approvals_resumed"], 1)
 
     def test_run_agent_denied_approval_blocks_resume(self) -> None:
