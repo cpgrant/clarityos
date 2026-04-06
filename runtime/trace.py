@@ -5,7 +5,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
-TRACE_VERSION = "v0.3"
+TRACE_VERSION = "v0.4"
+TRACE_SCHEMA = "trace.v2"
 
 
 def trace_run(data: dict) -> Path:
@@ -17,6 +18,7 @@ def trace_run(data: dict) -> Path:
 
     trace_payload = {
         "version": TRACE_VERSION,
+        "schema": TRACE_SCHEMA,
         "timestamp": timestamp.isoformat(),
         **data,
     }

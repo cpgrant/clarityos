@@ -4,9 +4,9 @@ Minimal, explicit LLM execution runtime.
 
 ## Status
 
-- Current release: `v0.3`
-- Current focus: explicit tools with structured traces and API errors
-- Next target: `v0.4` - control and safety
+- Current release: `v0.4`
+- Current focus: policy enforcement, run budgets, tool contracts, trace schema v2, and approval-gated runs
+- Next target: `v0.5` durable workflows
 
 ## What It Does
 
@@ -28,15 +28,22 @@ API -> Agent -> Prompt/Tool -> Model/Tool Result -> Response
 
 ```text
 clarityos/
+├── approvals/
 ├── api/
 │   └── main.py
 ├── config/
 │   ├── agents.yaml
-│   └── models.yaml
+│   ├── models.yaml
+│   └── policies.yaml
 ├── logs/
 ├── runtime/
 │   ├── agent.py
+│   ├── approval.py
+│   ├── budget.py
+│   ├── contracts.py
+│   ├── errors.py
 │   ├── model.py
+│   ├── policy.py
 │   ├── prompt_builder.py
 │   ├── trace.py
 │   └── tools.py
@@ -135,20 +142,57 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"agent":"default","tool":"read_file","tool_args":{"path":"README.md"}}'
 ```
 
+Request an approval-gated tool run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"supervised","tool":"echo","tool_args":{"text":"needs approval"}}'
+```
+
 The `/run` response returns:
 
 - `status`
 - `run_type`
 - `agent`
+- `policy`
+- `budget_limits`
+- `budget_used`
 - `prompt`
 - `provider`
 - `model`
 - `tool`
 - `tool_args`
 - `tool_output`
+- `tool_result`
+- `approval`
 - `output`
 
-For tool runs, invalid requests return structured JSON errors with HTTP `400` or `404` instead of a generic internal server error.
+Invalid requests return structured JSON errors with HTTP `400`, `403`, `404`, `409`, or `429` instead of a generic internal server error.
+
+Approval endpoints:
+
+- `GET /approvals/{approval_id}`
+- `POST /approvals/{approval_id}/approve`
+- `POST /approvals/{approval_id}/deny`
+- `POST /approvals/{approval_id}/abort`
+
+End-to-end approval flow:
+
+1. Request the gated action and copy the returned `approval.approval_id`.
+2. Approve it:
+
+```bash
+curl -X POST http://127.0.0.1:8000/approvals/<approval_id>/approve
+```
+
+3. Resume the same request with `approval_id`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"supervised","tool":"echo","tool_args":{"text":"needs approval"},"approval_id":"<approval_id>"}'
+```
 
 ## Logs
 
@@ -162,19 +206,70 @@ Model-run success log example:
 
 ```json
 {
-  "version": "v0.3",
+  "version": "v0.4",
+  "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
+  "parent_run_id": null,
   "run_type": "model",
   "status": "success",
   "duration_ms": 12.3,
-  "input": "...",
   "agent": "...",
-  "prompt": "...",
-  "model_alias": "fast",
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "output": "..."
+  "policy_snapshot": {
+    "name": "safe_readonly"
+  },
+  "budget": {
+    "limits": {
+      "max_steps": 4
+    },
+    "used": {
+      "steps_used": 1
+    }
+  },
+  "decision_log": [
+    {
+      "stage": "model_policy_check",
+      "allowed": true
+    }
+  ],
+  "source_attribution": {
+    "input": [
+      {
+        "type": "user_input"
+      }
+    ],
+    "context": [
+      {
+        "type": "system_prompt"
+      },
+      {
+        "type": "composed_prompt"
+      }
+    ],
+    "output": {
+      "type": "model"
+    }
+  },
+  "cost_accounting": {
+    "estimated_tokens": {
+      "total": 42
+    },
+    "operations": {
+      "model_calls": 1
+    }
+  },
+  "context": {
+    "input": "...",
+    "prompt": "...",
+    "model_alias": "fast"
+  },
+  "result": {
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    },
+    "output": "..."
+  }
 }
 ```
 
@@ -182,23 +277,58 @@ Tool-run success log example:
 
 ```json
 {
-  "version": "v0.3",
+  "version": "v0.4",
+  "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
+  "parent_run_id": null,
   "run_type": "tool",
   "status": "success",
   "duration_ms": 1.2,
-  "input": "",
   "agent": "default",
-  "prompt": null,
-  "model_alias": null,
-  "tool_name": "read_file",
-  "tool_args": {
-    "path": "README.md"
+  "policy_snapshot": {
+    "name": "safe_readonly"
   },
-  "tool_output": "...file contents...",
-  "tool_ok": true,
-  "output": "...file contents..."
+  "source_attribution": {
+    "input": [
+      {
+        "type": "user_input"
+      },
+      {
+        "type": "tool_args"
+      }
+    ],
+    "context": [],
+    "output": {
+      "type": "tool"
+    }
+  },
+  "context": {
+    "input": "",
+    "prompt": null,
+    "model_alias": null
+  },
+  "result": {
+    "tool": {
+      "name": "read_file",
+      "ok": true,
+      "input": {
+        "args": {
+          "path": "README.md"
+        }
+      },
+      "output": {
+        "value": "...file contents..."
+      },
+      "error": null
+    },
+    "output": "...file contents..."
+  },
+  "cost_accounting": {
+    "operations": {
+      "tool_calls": 1
+    }
+  }
 }
 ```
 
@@ -206,16 +336,73 @@ Tool-run error logs include:
 
 ```json
 {
-  "version": "v0.3",
+  "version": "v0.4",
   "run_type": "tool",
   "status": "error",
-  "tool_name": "read_file",
-  "tool_args": {
-    "path": "../.bashrc"
+  "decision_log": [
+    {
+      "stage": "tool_policy_check",
+      "allowed": false
+    }
+  ],
+  "result": {
+    "tool": {
+      "name": "read_file",
+      "ok": false,
+      "input": {
+        "args": {
+          "path": "../.bashrc"
+        }
+      },
+      "error": {
+        "failure_type": "tool_error",
+        "error_type": "PolicyDeniedError",
+        "message": "No allow rule matched ..."
+      }
+    },
+    "error": {
+      "error_type": "PolicyDeniedError",
+      "message": "No allow rule matched ..."
+    }
   },
-  "error_type": "...",
-  "error_message": "...",
-  "tool_error": "..."
+  "budget": {
+    "used": {
+      "tool_calls_used": 1
+    }
+  }
+}
+```
+
+Approval-pending logs include:
+
+```json
+{
+  "version": "v0.4",
+  "schema": "trace.v2",
+  "run_type": "tool",
+  "status": "pending",
+  "decision_log": [
+    {
+      "stage": "tool_policy_check",
+      "requires_approval": true
+    },
+    {
+      "stage": "approval_requested",
+      "approval_id": "..."
+    }
+  ],
+  "result": {
+    "approval": {
+      "approval_id": "...",
+      "status": "pending"
+    },
+    "output": null
+  },
+  "cost_accounting": {
+    "operations": {
+      "approvals_requested": 1
+    }
+  }
 }
 ```
 
@@ -238,11 +425,14 @@ The tests cover:
 - success path
 - error path
 - deterministic fake-model execution
-- trace creation
+- trace schema v2 creation
 - explicit tool execution
+- policy denial
+- approval request and resume
+- budget exhaustion
 - API error mapping
 
-## v0.3 Test Checklist
+## v0.4 Test Checklist
 
 1. Run the automated tests:
 

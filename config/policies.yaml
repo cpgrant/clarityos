@@ -1,0 +1,32 @@
+policies:
+  safe_readonly:
+    allow:
+      - capability: model_call
+      - capability: exec
+        commands:
+          - echo
+          - get_time
+      - capability: file_read
+        paths:
+          - "**"
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: memory_read
+      - capability: memory_write
+
+  approval_exec:
+    allow:
+      - capability: model_call
+      - capability: file_read
+        paths:
+          - "**"
+    approval:
+      - capability: exec
+        commands:
+          - echo
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: memory_read
+      - capability: memory_write

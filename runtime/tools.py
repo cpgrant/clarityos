@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from runtime.contracts import build_tool_failure, build_tool_success
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -52,9 +53,21 @@ def read_file_tool(args: dict) -> str:
 
 
 TOOLS = {
-    "echo": echo_tool,
-    "get_time": get_time_tool,
-    "read_file": read_file_tool,
+    "echo": {
+        "handler": echo_tool,
+        "capability": "exec",
+        "command": "echo",
+    },
+    "get_time": {
+        "handler": get_time_tool,
+        "capability": "exec",
+        "command": "get_time",
+    },
+    "read_file": {
+        "handler": read_file_tool,
+        "capability": "file_read",
+        "path_arg": "path",
+    },
 }
 
 
@@ -62,9 +75,15 @@ def list_tools() -> list[str]:
     return sorted(TOOLS)
 
 
-def call_tool(name: str, args: dict | None = None) -> dict:
+def get_tool_definition(name: str) -> dict:
     if name not in TOOLS:
         raise ValueError(f"Unknown tool: {name}")
+
+    return TOOLS[name]
+
+
+def call_tool(name: str, args: dict | None = None) -> dict:
+    tool_definition = get_tool_definition(name)
 
     if args is None:
         args = {}
@@ -72,10 +91,9 @@ def call_tool(name: str, args: dict | None = None) -> dict:
     if not isinstance(args, dict):
         raise ValueError("Tool arguments must be an object")
 
-    output = TOOLS[name](args)
-    return {
-        "name": name,
-        "args": args,
-        "output": output,
-        "ok": True,
-    }
+    try:
+        output = tool_definition["handler"](args)
+    except Exception as exc:
+        return build_tool_failure(name=name, args=args, exc=exc)
+
+    return build_tool_success(name=name, args=args, output=output)

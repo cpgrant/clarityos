@@ -2,6 +2,12 @@ agents:
   default:
     system: "You are a helpful assistant"
     model: fast
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
     tools:
       - echo
       - get_time
@@ -10,6 +16,12 @@ agents:
   researcher:
     system: "You provide precise, structured answers"
     model: smart
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
     tools:
       - get_time
       - read_file
@@ -17,3 +29,21 @@ agents:
   local:
     system: "You are a helpful assistant"
     model: local_fast
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+
+  supervised:
+    system: "You are a supervised assistant that requires approval before running echo"
+    model: fast
+    policy: approval_exec
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - echo
