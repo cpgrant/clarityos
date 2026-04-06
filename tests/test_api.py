@@ -7,6 +7,156 @@ from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDenied
 
 
 class ApiTests(unittest.TestCase):
+    @patch.object(main, "register_worker", return_value={"worker_id": "worker-123", "status": "idle"})
+    def test_worker_create_passthrough(self, mock_register_worker) -> None:
+        response = main.worker_create({"name": "queue-1", "lease_seconds": 45})
+
+        self.assertEqual(response["worker_id"], "worker-123")
+        mock_register_worker.assert_called_once_with(name="queue-1", lease_seconds=45)
+
+    @patch.object(main, "list_workers", return_value=[{"worker_id": "worker-123"}])
+    def test_worker_list_passthrough(self, mock_list_workers) -> None:
+        response = main.worker_list()
+
+        self.assertEqual(response["workers"], [{"worker_id": "worker-123"}])
+        mock_list_workers.assert_called_once_with()
+
+    @patch.object(main, "load_worker", return_value={"worker_id": "worker-123", "status": "idle"})
+    def test_worker_status_passthrough(self, _mock_load_worker) -> None:
+        response = main.worker_status("worker-123")
+
+        self.assertEqual(response["worker_id"], "worker-123")
+        self.assertEqual(response["status"], "idle")
+
+    @patch.object(main, "heartbeat_worker", return_value={"worker_id": "worker-123", "status": "idle"})
+    def test_worker_heartbeat_passthrough(self, mock_heartbeat_worker) -> None:
+        response = main.worker_heartbeat("worker-123")
+
+        self.assertEqual(response["worker_id"], "worker-123")
+        mock_heartbeat_worker.assert_called_once_with("worker-123")
+
+    @patch.object(main, "claim_next_job", return_value={"job_id": "job-123", "status": "running"})
+    def test_worker_claim_job_passthrough(self, mock_claim_next_job) -> None:
+        response = main.worker_claim_job("worker-123")
+
+        self.assertEqual(response["job"]["job_id"], "job-123")
+        mock_claim_next_job.assert_called_once_with("worker-123")
+
+    @patch.object(main, "run_claimed_job", return_value={"job_id": "job-123", "status": "completed"})
+    def test_worker_run_claimed_job_passthrough(self, mock_run_claimed_job) -> None:
+        response = main.worker_run_claimed_job("worker-123", "job-123")
+
+        self.assertEqual(response["job_id"], "job-123")
+        mock_run_claimed_job.assert_called_once_with("worker-123", "job-123")
+
+    @patch.object(main, "run_next_job", return_value={"job_id": "job-123", "status": "completed"})
+    def test_worker_run_next_passthrough(self, mock_run_next_job) -> None:
+        response = main.worker_run_next("worker-123")
+
+        self.assertEqual(response["job"]["job_id"], "job-123")
+        mock_run_next_job.assert_called_once_with("worker-123")
+
+    @patch.object(main, "reclaim_expired_leases", return_value={"reclaimed_count": 1})
+    def test_worker_reclaim_expired_passthrough(self, mock_reclaim_expired_leases) -> None:
+        response = main.worker_reclaim_expired()
+
+        self.assertEqual(response["reclaimed_count"], 1)
+        mock_reclaim_expired_leases.assert_called_once_with()
+
+    @patch.object(main, "create_job", return_value={"job_id": "job-123", "status": "queued"})
+    def test_job_create_passthrough(self, mock_create_job) -> None:
+        response = main.job_create(
+            {
+                "type": "workflow_start",
+                "input": "hello",
+                "max_attempts": 3,
+                "retry_backoff_seconds": 15,
+            }
+        )
+
+        self.assertEqual(response["job_id"], "job-123")
+        mock_create_job.assert_called_once_with(
+            job_type="workflow_start",
+            payload={
+                "input": "hello",
+                "agent": "default",
+                "tool": None,
+                "tool_args": None,
+                "approval_id": None,
+            },
+            priority=100,
+            delay_seconds=0,
+            run_at=None,
+            workflow_id=None,
+            parent_job_id=None,
+            idempotency_key=None,
+            max_attempts=3,
+            retry_backoff_seconds=15,
+        )
+
+    def test_job_create_requires_workflow_id_for_resume_jobs(self) -> None:
+        response = main.job_create({"type": "workflow_resume"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "ValueError",
+                    "message": "Job type `workflow_resume` requires `workflow_id`",
+                },
+            },
+        )
+
+    @patch.object(main, "list_jobs", return_value=[{"job_id": "job-123"}])
+    def test_job_list_passthrough(self, mock_list_jobs) -> None:
+        response = main.job_list(status="queued")
+
+        self.assertEqual(response["jobs"], [{"job_id": "job-123"}])
+        mock_list_jobs.assert_called_once_with(status="queued")
+
+    @patch.object(main, "load_job", return_value={"job_id": "job-123", "status": "queued"})
+    def test_job_status_passthrough(self, _mock_load_job) -> None:
+        response = main.job_status("job-123")
+
+        self.assertEqual(response["job_id"], "job-123")
+        self.assertEqual(response["status"], "queued")
+
+    @patch.object(main, "cancel_job_execution", return_value={"job_id": "job-123", "status": "canceled"})
+    def test_job_cancel_passthrough(self, mock_cancel_job_execution) -> None:
+        response = main.job_cancel("job-123", {"reason": "operator canceled"})
+
+        self.assertEqual(response["job_id"], "job-123")
+        self.assertEqual(response["status"], "canceled")
+        mock_cancel_job_execution.assert_called_once_with("job-123", reason="operator canceled")
+
+    @patch.object(main, "reschedule_job", return_value={"job_id": "job-123", "status": "scheduled"})
+    def test_job_reschedule_passthrough(self, mock_reschedule_job) -> None:
+        response = main.job_reschedule("job-123", {"delay_seconds": 60})
+
+        self.assertEqual(response["job_id"], "job-123")
+        self.assertEqual(response["status"], "scheduled")
+        mock_reschedule_job.assert_called_once_with("job-123", delay_seconds=60, run_at=None)
+
+    @patch.object(
+        main,
+        "queue_summary",
+        return_value={"counts": {"queued": 1, "scheduled": 0}},
+    )
+    def test_queue_status_passthrough(self, mock_queue_summary) -> None:
+        response = main.queue_status()
+
+        self.assertEqual(response["counts"]["queued"], 1)
+        mock_queue_summary.assert_called_once_with()
+
+    @patch.object(main, "promote_due_jobs", return_value={"promoted_count": 1, "promoted_job_ids": ["job-123"]})
+    def test_queue_promote_ready_passthrough(self, mock_promote_due_jobs) -> None:
+        response = main.queue_promote_ready({"limit": 5})
+
+        self.assertEqual(response["promoted_count"], 1)
+        mock_promote_due_jobs.assert_called_once_with(limit=5)
+
     @patch.object(main, "start_workflow")
     def test_run_success_passthrough(self, mock_start_workflow) -> None:
         mock_start_workflow.return_value = {

@@ -4,9 +4,9 @@ Minimal, explicit LLM execution runtime.
 
 ## Status
 
-- Current release: `v0.5`
-- Current focus: `v0.6` queue + workers
-- Next target: `v0.7` typed memory + bounded retrieval
+- Current release: `v0.6`
+- Current focus: `v0.7` typed memory and bounded retrieval
+- Next target: `v0.7` slice 1 typed memory layers
 
 ## What It Does
 
@@ -32,6 +32,8 @@ clarityos/
 ├── artifacts/
 ├── api/
 │   └── main.py
+├── jobs/
+├── workers/
 ├── config/
 │   ├── agents.yaml
 │   ├── models.yaml
@@ -48,8 +50,10 @@ clarityos/
 │   ├── model.py
 │   ├── policy.py
 │   ├── prompt_builder.py
+│   ├── queue.py
 │   ├── trace.py
 │   ├── tools.py
+│   ├── worker.py
 │   ├── workflow.py
 │   └── workflow_runner.py
 ├── workflows/
@@ -59,6 +63,8 @@ clarityos/
 │   ├── test_agent.py
 │   ├── test_api.py
 │   ├── test_control_plane.py
+│   ├── test_queue.py
+│   ├── test_worker.py
 │   ├── test_workflow.py
 │   └── test_workflow_runner.py
 ├── requirements.txt
@@ -201,12 +207,116 @@ Artifact endpoint:
 
 - `GET /artifacts/{artifact_id}`
 
+Job endpoints:
+
+- `POST /jobs`
+- `GET /jobs`
+- `GET /jobs/{job_id}`
+- `POST /jobs/{job_id}/cancel`
+- `POST /jobs/{job_id}/reschedule`
+
+Queue endpoints:
+
+- `GET /queue`
+- `POST /queue/promote-ready`
+
+Worker endpoints:
+
+- `POST /workers`
+- `GET /workers`
+- `GET /workers/{worker_id}`
+- `POST /workers/{worker_id}/heartbeat`
+- `POST /workers/{worker_id}/jobs/claim`
+- `POST /workers/{worker_id}/jobs/{job_id}/run`
+- `POST /workers/{worker_id}/jobs/run-next`
+- `POST /workers/reclaim-expired`
+
 Workflow endpoint:
 
 - `POST /workflows`
 - `GET /workflows/{workflow_id}` returns an operator-friendly control-plane view
 - `POST /workflows/{workflow_id}/resume`
 - `POST /workflows/{workflow_id}/subruns`
+
+Queue a workflow job instead of running it immediately:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"type":"workflow_start","agent":"default","input":"Explain agents simply","priority":100}'
+```
+
+Queue an idempotent workflow job so duplicate submits reuse the same record:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"type":"workflow_start","agent":"default","input":"Explain agents simply","idempotency_key":"job-brief-001"}'
+```
+
+Queue a retryable workflow job with bounded backoff:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"type":"workflow_start","agent":"default","input":"Explain agents simply","max_attempts":3,"retry_backoff_seconds":30}'
+```
+
+Queue a delayed resume job:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"type":"workflow_resume","workflow_id":"<workflow_id>","delay_seconds":60}'
+```
+
+Cancel queued or claimed work safely:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/<job_id>/cancel \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"operator canceled"}'
+```
+
+Reschedule queued or delayed work:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/<job_id>/reschedule \
+  -H "Content-Type: application/json" \
+  -d '{"delay_seconds":300}'
+```
+
+Register a worker and run the next queued job:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workers \
+  -H "Content-Type: application/json" \
+  -d '{"name":"worker-1","lease_seconds":30}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/workers/<worker_id>/jobs/run-next
+```
+
+Reclaim expired leases if a worker dies or misses its lease window:
+
+```bash
+curl -X POST http://127.0.0.1:8000/workers/reclaim-expired
+```
+
+Inspect queue depth and scheduled backlog:
+
+```bash
+curl http://127.0.0.1:8000/queue
+```
+
+The queue summary now includes status counts, total jobs, running job IDs, retry-pending scheduled job IDs, dead-letter job IDs, the oldest queued timestamp, and the next scheduled ready time.
+
+Promote any due scheduled jobs immediately:
+
+```bash
+curl -X POST http://127.0.0.1:8000/queue/promote-ready
+```
 
 End-to-end approval flow:
 
@@ -265,11 +375,31 @@ Successful runs also persist durable output artifacts:
 artifacts/<artifact_id>.json
 ```
 
+Queued work persists durable job records too:
+
+```text
+jobs/<job_id>.json
+```
+
+Job records now carry durable submission and operator state too, including `idempotency_key`, `cancel_reason`, `canceled_at`, worker claim metadata, reclaim metadata, and `ready_at` scheduling state.
+
+Worker runtime state persists too:
+
+```text
+workers/<worker_id>.json
+```
+
+Failed jobs can now retry with bounded backoff using `max_attempts` and `retry_backoff_seconds`. Once retry budget is exhausted, the job moves to `dead_letter` and can be inspected with:
+
+```bash
+curl "http://127.0.0.1:8000/jobs?status=dead_letter"
+```
+
 Model-run success log example:
 
 ```json
 {
-  "version": "v0.5",
+  "version": "v0.6",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -345,7 +475,7 @@ Tool-run success log example:
 
 ```json
 {
-  "version": "v0.5",
+  "version": "v0.6",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -409,7 +539,7 @@ Tool-run error logs include:
 
 ```json
 {
-  "version": "v0.5",
+  "version": "v0.6",
   "run_type": "tool",
   "status": "error",
   "decision_log": [
@@ -450,7 +580,7 @@ Approval-pending logs include:
 
 ```json
 {
-  "version": "v0.5",
+  "version": "v0.6",
   "schema": "trace.v2",
   "run_type": "tool",
   "status": "pending",
@@ -514,10 +644,13 @@ The tests cover:
 - bounded child workflow lineage
 - durable workflow artifacts
 - workflow control-plane aggregation
+- durable queue jobs with priority and delay
+- worker registration, heartbeat, claiming, and job execution
+- lease expiry detection and expired-job reclaim
 - budget exhaustion
 - API error mapping
 
-## v0.5 Test Checklist
+## v0.6 Test Checklist
 
 1. Run the automated tests:
 
@@ -574,7 +707,29 @@ curl -i -X POST http://127.0.0.1:8000/run \
   -d '{"agent":"default","tool":"read_file","tool_args":{"path":"missing.txt"}}'
 ```
 
-6. Inspect the latest trace:
+6. Verify queued execution and worker processing:
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"type":"workflow_start","agent":"default","input":"Explain agents simply","max_attempts":3,"retry_backoff_seconds":30}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/workers \
+  -H "Content-Type: application/json" \
+  -d '{"name":"worker-1","lease_seconds":30}'
+```
+
+```bash
+curl http://127.0.0.1:8000/queue
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/workers/<worker_id>/jobs/run-next
+```
+
+7. Inspect the latest trace:
 
 ```bash
 scripts/show_latest_log.sh
