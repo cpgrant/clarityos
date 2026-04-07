@@ -20,6 +20,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v0.3.md`
 - `docs/history/v0.6.md`
 - `docs/history/v0.7.md`
+- `docs/history/v0.8.md`
 
 ## What It Does
 
@@ -52,7 +53,8 @@ clarityos/
 │       ├── v0.1.md
 │       ├── v0.3.md
 │       ├── v0.6.md
-│       └── v0.7.md
+│       ├── v0.7.md
+│       └── v0.8.md
 ├── memories/
 ├── jobs/
 ├── workers/
@@ -460,7 +462,7 @@ Model-run success log example:
 
 ```json
 {
-  "version": "v0.7",
+  "version": "v0.8",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -536,7 +538,7 @@ Tool-run success log example:
 
 ```json
 {
-  "version": "v0.7",
+  "version": "v0.8",
   "schema": "trace.v2",
   "timestamp": "...",
   "run_id": "...",
@@ -600,7 +602,7 @@ Tool-run error logs include:
 
 ```json
 {
-  "version": "v0.7",
+  "version": "v0.8",
   "run_type": "tool",
   "status": "error",
   "decision_log": [
@@ -641,7 +643,7 @@ Approval-pending logs include:
 
 ```json
 {
-  "version": "v0.7",
+  "version": "v0.8",
   "schema": "trace.v2",
   "run_type": "tool",
   "status": "pending",
@@ -716,7 +718,7 @@ The tests cover:
 - budget exhaustion
 - API error mapping
 
-## v0.7 Test Checklist
+## v0.8 Test Checklist
 
 1. Run the automated tests:
 

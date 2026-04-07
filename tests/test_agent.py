@@ -317,7 +317,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(payload["version"], "v0.7")
+        self.assertEqual(payload["version"], "v0.8")
         self.assertEqual(payload["schema"], "trace.v2")
         self.assertEqual(payload["agent"], "default")
         self.assertEqual(payload["workflow"]["status"], "succeeded")
@@ -709,7 +709,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["version"], "v0.7")
+        self.assertEqual(payload["version"], "v0.8")
         self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["context"]["input"], "hello")
         self.assertEqual(payload["agent"], "missing")
