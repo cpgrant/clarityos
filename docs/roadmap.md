@@ -6,9 +6,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v0.7`
-- Next planned milestone: `v0.8`
-- Next planned slice: `v0.8` slice 1 bounded delegation foundations
+- Latest completed milestone: `v0.8`
+- Next planned milestone: `v0.9`
+- Next planned slice: `v0.9` slice 1 state versioning and migrations
 
 ## Milestones
 
@@ -60,17 +60,17 @@ Acceptance criteria:
 - Automated tests cover memory CRUD, bounded retrieval, policy denial, and workflow integration.
 
 10. `v0.8` - multi-agent coordination
-Status: planned
+Status: completed
 
 Goal:
 Coordinate multiple agents through explicit workflows, bounded delegation, and scoped memory access.
 
 Slices:
 
-- Slice 1: bounded delegation foundations - planned
-- Slice 2: child workflow execution and lineage - planned
-- Slice 3: scoped shared memory handoff - planned
-- Slice 4: operator inspection and failure isolation - planned
+- Slice 1: bounded delegation foundations - completed
+- Slice 2: child workflow execution and lineage - completed
+- Slice 3: scoped shared memory handoff - completed
+- Slice 4: operator inspection and failure isolation - completed
 
 Acceptance criteria:
 

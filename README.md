@@ -4,11 +4,13 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v0.7`
-- Current focus: `v0.8` multi-agent coordination
-- Next target: `v0.8` slice 1 bounded delegation foundations
+- Current release: `v0.8`
+- Current focus: `v0.9` production hardening
+- Next target: `v0.9` slice 1 state versioning and migrations
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
+
+`v0.8` completes bounded delegation, child workflow lineage, explicit child role metadata, scoped shared-memory handoff, and operator-facing failure inspection.
 
 ## Historical Docs
 
@@ -405,12 +407,14 @@ Bounded child workflows can be started from an existing workflow too:
 ```bash
 curl -X POST http://127.0.0.1:8000/workflows/<workflow_id>/subruns \
   -H "Content-Type: application/json" \
-  -d '{"agent":"researcher","input":"Summarize the parent result"}'
+  -d '{"agent":"researcher","role":"summarizer","input":"Summarize the parent result","allowed_capabilities":["model_call"],"shared_memory_ids":["<memory_id>"]}'
 ```
 
 Child workflows inherit explicit lineage through `parent_workflow_id`, `root_workflow_id`, `depth`, and `child_workflow_ids`, and spawning is bounded by the parent workflow's configured subrun policy.
 
-The workflow status endpoint now pulls the related control-plane state together in one response: current step details, approval summaries, artifact summaries, linked memory summaries, child workflow snapshots, and next valid actions like resume, approve, spawn subrun, or inspect linked memory.
+Each child workflow also persists an explicit delegation contract with assigned role metadata, allowed capabilities, allowed tools, and any shared-memory summaries handed off by the parent. Shared memory handoff is selective by `memory_id` and is surfaced in the child workflow snapshot, control-plane view, prompt context, and traces.
+
+The workflow status endpoint now pulls the related control-plane state together in one response: current step details, approval summaries, artifact summaries, linked memory summaries, child workflow snapshots, handed-off shared memory, child failure summaries, containment status, and next valid actions like resume, approve, spawn subrun, or inspect linked memory.
 
 ## Logs
 
@@ -705,6 +709,7 @@ The tests cover:
 - durable workflow artifacts
 - workflow-linked memory summaries
 - workflow control-plane aggregation
+- child failure inspection and containment reporting
 - durable queue jobs with priority and delay
 - worker registration, heartbeat, claiming, and job execution
 - lease expiry detection and expired-job reclaim
@@ -869,7 +874,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Failures in one child workflow do not silently corrupt sibling or parent workflow state.
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
-Next planned slices for `v0.8` live in `docs/roadmap.md` and start with bounded delegation foundations, then child workflow execution, scoped shared memory handoff, and operator-facing failure isolation.
+`v0.8` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v0.9` production hardening, starting with state versioning and migrations.
 
 ### `v0.9` Acceptance Criteria
 

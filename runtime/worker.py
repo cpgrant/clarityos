@@ -225,6 +225,10 @@ def dispatch_job(job: dict[str, Any]) -> dict[str, Any]:
             agent_name=payload.get("agent", "default"),
             tool_name=payload.get("tool"),
             tool_args=payload.get("tool_args"),
+            role=payload.get("role"),
+            allowed_capabilities=payload.get("allowed_capabilities"),
+            allowed_tools=payload.get("allowed_tools"),
+            shared_memory_ids=payload.get("shared_memory_ids"),
         )
     raise ValueError(f"Unsupported job type: {job['job_type']}")
 

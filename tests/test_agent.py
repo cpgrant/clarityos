@@ -342,6 +342,44 @@ policies:
         self.assertIn("duration_ms", payload)
         self.assertIn("timestamp", payload)
 
+    @patch.object(agent, "call_model", side_effect=fake_model)
+    def test_run_agent_shared_memory_handoff_is_added_to_prompt_and_trace(self, _mock_call_model) -> None:
+        result = agent.run_agent(
+            "Summarize the parent result",
+            "researcher",
+            parent_run_id="run-parent",
+            parent_workflow_id="wf-parent",
+            root_workflow_id="wf-parent",
+            workflow_depth=1,
+            delegation={
+                "role": "summarizer",
+                "assigned_by_workflow_id": "wf-parent",
+                "assigned_by_run_id": "run-parent",
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+            },
+            shared_memories=[
+                {
+                    "memory_id": "memory-123",
+                    "memory_type": "fact",
+                    "scope": {"kind": "workflow", "value": "wf-parent"},
+                    "workflow_id": "wf-parent",
+                    "payload_summary": "Retries are bounded",
+                }
+            ],
+        )
+
+        self.assertEqual(result["workflow"]["delegation"]["role"], "summarizer")
+        self.assertEqual(result["workflow"]["shared_memories"][0]["memory_id"], "memory-123")
+        self.assertIn("SHARED MEMORY:", result["prompt"])
+        self.assertIn("Retries are bounded", result["prompt"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["decision_log"][0]["stage"], "delegation_check")
+        self.assertEqual(payload["source_attribution"]["context"][0]["type"], "shared_memory")
+        self.assertEqual(payload["source_attribution"]["context"][0]["memory_id"], "memory-123")
+
     def test_run_agent_tool_success(self) -> None:
         result = agent.run_agent(
             "hello",
@@ -387,6 +425,26 @@ policies:
         self.assertEqual(payload["source_attribution"]["input"][1]["type"], "tool_args")
         self.assertEqual(payload["source_attribution"]["output"]["type"], "tool")
         self.assertEqual(payload["cost_accounting"]["operations"]["tool_calls"], 1)
+
+    def test_run_agent_delegation_denies_disallowed_tool(self) -> None:
+        with self.assertRaisesRegex(PermissionError, "does not allow tool `echo`"):
+            agent.run_agent(
+                "",
+                "default",
+                tool_name="echo",
+                tool_args={"text": "hello"},
+                parent_run_id="run-parent",
+                parent_workflow_id="wf-parent",
+                root_workflow_id="wf-parent",
+                workflow_depth=1,
+                delegation={
+                    "role": "reader",
+                    "assigned_by_workflow_id": "wf-parent",
+                    "assigned_by_run_id": "run-parent",
+                    "allowed_capabilities": ["exec"],
+                    "allowed_tools": ["get_time"],
+                },
+            )
 
     def test_run_agent_get_time_tool_success(self) -> None:
         result = agent.run_agent(

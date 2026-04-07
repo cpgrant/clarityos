@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from runtime.artifact import load_artifact
 from runtime.approval import abort_approval, approve_approval, deny_approval, get_approval
 from runtime.control_plane import workflow_control_view
-from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
+from runtime.errors import ApprovalStateError, BudgetExceededError, DelegationDeniedError, PolicyDeniedError
 from runtime.memory import delete_memory, list_memories, load_memory
 from runtime.queue import create_job, list_jobs, load_job, promote_due_jobs, queue_summary, reschedule_job
 from runtime.worker import (
@@ -20,7 +20,7 @@ from runtime.worker import (
 )
 from runtime.workflow_runner import resume_workflow, start_child_workflow, start_workflow
 
-app = FastAPI(title="ClarityOS", version="0.7.0")
+app = FastAPI(title="ClarityOS", version="0.8.0")
 
 
 @app.get("/status")
@@ -31,7 +31,7 @@ def status() -> dict[str, str]:
 def error_status_code(exc: Exception) -> int:
     if isinstance(exc, FileNotFoundError):
         return 404
-    if isinstance(exc, PolicyDeniedError):
+    if isinstance(exc, (DelegationDeniedError, PolicyDeniedError)):
         return 403
     if isinstance(exc, ApprovalStateError):
         return 409
@@ -94,6 +94,11 @@ def queue_job_request(payload: dict):
     }
     if workflow_id is not None:
         job_payload["workflow_id"] = workflow_id
+    if job_type == "workflow_subrun":
+        job_payload["role"] = payload.get("role")
+        job_payload["allowed_capabilities"] = payload.get("allowed_capabilities")
+        job_payload["allowed_tools"] = payload.get("allowed_tools")
+        job_payload["shared_memory_ids"] = payload.get("shared_memory_ids")
 
     return create_job(
         job_type=job_type,
@@ -368,6 +373,10 @@ def workflow_spawn_subrun(workflow_id: str, payload: dict):
             agent_name=payload.get("agent", "default"),
             tool_name=payload.get("tool"),
             tool_args=payload.get("tool_args"),
+            role=payload.get("role"),
+            allowed_capabilities=payload.get("allowed_capabilities"),
+            allowed_tools=payload.get("allowed_tools"),
+            shared_memory_ids=payload.get("shared_memory_ids"),
         )
     except Exception as exc:
         return error_response(exc)

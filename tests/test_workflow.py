@@ -55,6 +55,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIsNone(snapshot["parent_workflow_id"])
         self.assertEqual(snapshot["depth"], 0)
         self.assertEqual(snapshot["child_workflow_ids"], [])
+        self.assertEqual(snapshot["shared_memories"], [])
+        self.assertEqual(snapshot["delegation"], {})
         self.assertEqual(snapshot["status"], "running")
         self.assertEqual(snapshot["current_step_id"], "model_step")
         self.assertEqual(snapshot["request"], {})
@@ -106,6 +108,95 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(child_snapshot["parent_workflow_id"], "parent-123")
         self.assertEqual(child_snapshot["root_workflow_id"], "parent-123")
         self.assertEqual(child_snapshot["depth"], 1)
+
+    def test_create_workflow_state_persists_delegation_and_shared_memory(self) -> None:
+        workflow = create_workflow_state(
+            run_id="child-123",
+            agent="researcher",
+            run_type="model",
+            parent_workflow_id="parent-123",
+            root_workflow_id="parent-123",
+            depth=1,
+            delegation={
+                "role": "summarizer",
+                "assigned_by_workflow_id": "parent-123",
+                "assigned_by_run_id": "run-parent",
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+            },
+            shared_memories=[
+                {
+                    "memory_id": "memory-123",
+                    "memory_type": "fact",
+                    "scope": {"kind": "workflow", "value": "parent-123"},
+                    "workflow_id": "parent-123",
+                    "payload_summary": "Parent result summary",
+                }
+            ],
+        )
+
+        snapshot = workflow_snapshot(workflow)
+
+        self.assertEqual(snapshot["delegation"]["role"], "summarizer")
+        self.assertEqual(snapshot["delegation"]["allowed_capabilities"], ["model_call"])
+        self.assertEqual(snapshot["shared_memories"][0]["memory_id"], "memory-123")
+
+    def test_write_and_load_workflow_persists_delegation_and_shared_memory(self) -> None:
+        workflow = create_workflow_state(
+            run_id="child-123",
+            agent="researcher",
+            run_type="model",
+            parent_workflow_id="parent-123",
+            root_workflow_id="parent-123",
+            depth=1,
+            delegation={
+                "role": "summarizer",
+                "assigned_by_workflow_id": "parent-123",
+                "assigned_by_run_id": "run-parent",
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+            },
+            shared_memories=[
+                {
+                    "memory_id": "memory-123",
+                    "memory_type": "fact",
+                    "scope": {"kind": "workflow", "value": "parent-123"},
+                    "workflow_id": "parent-123",
+                    "payload_summary": "Parent result summary",
+                }
+            ],
+        )
+
+        write_workflow(workflow)
+        loaded = load_workflow(workflow.workflow_id)
+
+        self.assertEqual(loaded.delegation["role"], "summarizer")
+        self.assertEqual(loaded.delegation["allowed_capabilities"], ["model_call"])
+        self.assertEqual(loaded.shared_memories[0]["memory_id"], "memory-123")
+
+    def test_configure_subrun_policy_accepts_delegation_bounds(self) -> None:
+        workflow = create_workflow_state(
+            run_id="parent-123",
+            agent="default",
+            run_type="model",
+        )
+
+        configure_subrun_policy(
+            workflow,
+            {
+                "max_children": 2,
+                "max_depth": 2,
+                "allowed_agents": ["researcher"],
+                "allowed_capabilities": ["model_call", "memory_read"],
+                "allowed_tools": ["read_file"],
+            },
+        )
+
+        snapshot = workflow_snapshot(workflow)
+
+        self.assertEqual(snapshot["subrun_policy"]["allowed_agents"], ["researcher"])
+        self.assertEqual(snapshot["subrun_policy"]["allowed_capabilities"], ["model_call", "memory_read"])
+        self.assertEqual(snapshot["subrun_policy"]["allowed_tools"], ["read_file"])
 
     def test_write_and_load_workflow_persists_request(self) -> None:
         workflow = create_workflow_state(

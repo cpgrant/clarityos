@@ -1,7 +1,12 @@
+import uuid
 from datetime import datetime, timezone
 
 from runtime.agent import run_agent
 from runtime.approval import get_approval
+from runtime.errors import DelegationDeniedError
+from runtime.memory import load_memory, memory_summary
+from runtime.policy import assert_valid_capability
+from runtime.tools import get_tool_definition
 from runtime.workflow import (
     can_spawn_child_workflow,
     current_step,
@@ -28,6 +33,159 @@ def start_workflow(
     )
 
 
+def normalize_string_list(value: object, *, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"Workflow `{field_name}` must be a list of strings")
+
+    normalized = []
+    seen = set()
+    for raw_item in value:
+        if not isinstance(raw_item, str) or not raw_item.strip():
+            raise ValueError(f"Workflow `{field_name}` must contain non-empty strings")
+        item = raw_item.strip()
+        if item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+    return normalized
+
+
+def normalize_role(role: object, *, agent_name: str) -> str:
+    if role is None:
+        return agent_name
+    if not isinstance(role, str) or not role.strip():
+        raise ValueError("Workflow `role` must be a non-empty string")
+    return role.strip()
+
+
+def normalize_memory_ids(shared_memory_ids: object) -> list[str]:
+    return normalize_string_list(shared_memory_ids, field_name="shared_memory_ids")
+
+
+def requested_capability(tool_name: str | None) -> str:
+    if tool_name is None:
+        return "model_call"
+    return get_tool_definition(tool_name)["capability"]
+
+
+def ensure_requested_agent_allowed(parent, agent_name: str) -> None:
+    allowed_agents = parent.subrun_policy.get("allowed_agents")
+    if allowed_agents is not None and agent_name not in allowed_agents:
+        raise DelegationDeniedError(
+            f"Workflow `{parent.workflow_id}` delegation does not allow agent `{agent_name}`",
+            capability="workflow_subrun",
+            workflow_id=parent.workflow_id,
+        )
+
+
+def ensure_subset(
+    values: list[str],
+    *,
+    allowed_values: list[str] | None,
+    field_name: str,
+    parent_workflow_id: str,
+) -> None:
+    if allowed_values is None:
+        return
+    disallowed = sorted(set(values) - set(allowed_values))
+    if not disallowed:
+        return
+    raise DelegationDeniedError(
+        f"Workflow `{parent_workflow_id}` delegation does not allow {field_name}: {', '.join(disallowed)}",
+        capability="workflow_subrun",
+        workflow_id=parent_workflow_id,
+    )
+
+
+def build_child_delegation(
+    parent,
+    *,
+    agent_name: str,
+    tool_name: str | None,
+    role: object,
+    allowed_capabilities: object,
+    allowed_tools: object,
+) -> dict:
+    ensure_requested_agent_allowed(parent, agent_name)
+
+    capability = requested_capability(tool_name)
+    child_allowed_capabilities = normalize_string_list(
+        allowed_capabilities,
+        field_name="allowed_capabilities",
+    )
+    if not child_allowed_capabilities:
+        child_allowed_capabilities = [capability]
+    for allowed_capability in child_allowed_capabilities:
+        assert_valid_capability(allowed_capability)
+    if capability not in child_allowed_capabilities:
+        raise ValueError(
+            f"Workflow child delegation must allow the requested capability `{capability}`"
+        )
+
+    child_allowed_tools = normalize_string_list(allowed_tools, field_name="allowed_tools")
+    if tool_name is None:
+        if child_allowed_tools:
+            raise ValueError("Model child workflows cannot declare `allowed_tools`")
+    else:
+        if not child_allowed_tools:
+            child_allowed_tools = [tool_name]
+        if tool_name not in child_allowed_tools:
+            raise ValueError(f"Workflow child delegation must allow the requested tool `{tool_name}`")
+
+    ensure_subset(
+        child_allowed_capabilities,
+        allowed_values=parent.subrun_policy.get("allowed_capabilities"),
+        field_name="capabilities",
+        parent_workflow_id=parent.workflow_id,
+    )
+    if tool_name is not None:
+        ensure_subset(
+            child_allowed_tools,
+            allowed_values=parent.subrun_policy.get("allowed_tools"),
+            field_name="tools",
+            parent_workflow_id=parent.workflow_id,
+        )
+
+    return {
+        "role": normalize_role(role, agent_name=agent_name),
+        "assigned_by_workflow_id": parent.workflow_id,
+        "assigned_by_run_id": parent.latest_run_id,
+        "allowed_capabilities": child_allowed_capabilities,
+        "allowed_tools": child_allowed_tools,
+    }
+
+
+def memory_is_shareable_with_child(parent, memory_record: dict, *, child_agent_name: str) -> bool:
+    scope = memory_record.get("scope", {})
+    kind = scope.get("kind")
+    value = scope.get("value")
+    if kind == "global":
+        return True
+    if kind == "agent":
+        return value in {parent.agent, child_agent_name}
+    if kind == "workflow":
+        return value in {parent.workflow_id, parent.root_workflow_id}
+    if kind == "run":
+        return value in {parent.run_id, parent.latest_run_id}
+    return False
+
+
+def materialize_shared_memories(parent, *, child_agent_name: str, shared_memory_ids: object) -> list[dict]:
+    shared_memories = []
+    for memory_id in normalize_memory_ids(shared_memory_ids):
+        memory_record = load_memory(memory_id)
+        if not memory_is_shareable_with_child(parent, memory_record, child_agent_name=child_agent_name):
+            raise DelegationDeniedError(
+                f"Workflow `{parent.workflow_id}` cannot hand off memory `{memory_id}` to agent `{child_agent_name}`",
+                capability="memory_read",
+                workflow_id=parent.workflow_id,
+            )
+        shared_memories.append(memory_summary(memory_record))
+    return shared_memories
+
+
 def start_child_workflow(
     parent_workflow_id: str,
     *,
@@ -35,23 +193,48 @@ def start_child_workflow(
     agent_name: str,
     tool_name: str | None = None,
     tool_args: dict | None = None,
+    role: str | None = None,
+    allowed_capabilities: list[str] | None = None,
+    allowed_tools: list[str] | None = None,
+    shared_memory_ids: list[str] | None = None,
 ) -> dict:
     parent = load_workflow(parent_workflow_id)
     if not can_spawn_child_workflow(parent):
         raise ValueError(f"Workflow `{parent_workflow_id}` cannot spawn more child workflows")
-
-    result = run_agent(
-        user_input=user_input,
+    delegation = build_child_delegation(
+        parent,
         agent_name=agent_name,
         tool_name=tool_name,
-        tool_args=tool_args,
-        parent_run_id=parent.latest_run_id,
-        parent_workflow_id=parent.workflow_id,
-        root_workflow_id=parent.root_workflow_id,
-        workflow_depth=parent.depth + 1,
+        role=role,
+        allowed_capabilities=allowed_capabilities,
+        allowed_tools=allowed_tools,
     )
+    shared_memories = materialize_shared_memories(
+        parent,
+        child_agent_name=agent_name,
+        shared_memory_ids=shared_memory_ids,
+    )
+    child_workflow_id = str(uuid.uuid4())
 
-    child_workflow_id = result["workflow"]["workflow_id"]
+    try:
+        result = run_agent(
+            user_input=user_input,
+            agent_name=agent_name,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            run_id=child_workflow_id,
+            parent_run_id=parent.latest_run_id,
+            parent_workflow_id=parent.workflow_id,
+            root_workflow_id=parent.root_workflow_id,
+            workflow_depth=parent.depth + 1,
+            delegation=delegation,
+            shared_memories=shared_memories,
+        )
+    except Exception:
+        register_child_workflow(parent, child_workflow_id=child_workflow_id)
+        write_workflow(parent)
+        raise
+
     register_child_workflow(parent, child_workflow_id=child_workflow_id)
     write_workflow(parent)
     return result

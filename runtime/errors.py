@@ -5,6 +5,13 @@ class PolicyDeniedError(PermissionError):
         self.policy_name = policy_name
 
 
+class DelegationDeniedError(PermissionError):
+    def __init__(self, message: str, *, capability: str, workflow_id: str) -> None:
+        super().__init__(message)
+        self.capability = capability
+        self.workflow_id = workflow_id
+
+
 class BudgetExceededError(RuntimeError):
     def __init__(self, message: str, *, budget_name: str) -> None:
         super().__init__(message)

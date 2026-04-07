@@ -17,7 +17,7 @@ from runtime.approval import (
 )
 from runtime.budget import estimate_tokens, load_budget
 from runtime.contracts import exception_from_tool_result
-from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
+from runtime.errors import ApprovalStateError, BudgetExceededError, DelegationDeniedError, PolicyDeniedError
 from runtime.memory import memory_summary
 from runtime.model import call_model
 from runtime.policy import PolicyAction, build_agent_policy, evaluate_policy, snapshot_policy
@@ -31,6 +31,7 @@ from runtime.workflow import (
     configure_subrun_policy,
     create_workflow_state,
     current_step,
+    delegation_denial_reason,
     fail_workflow,
     load_workflow,
     mark_action_completed,
@@ -322,6 +323,54 @@ def create_result_artifact(state: RunState) -> dict:
     )
 
 
+def append_shared_memory_sources(state: RunState) -> None:
+    if state.workflow is None:
+        return
+
+    for memory in state.workflow.shared_memories:
+        append_context_source(
+            state,
+            "shared_memory",
+            token_estimate=estimate_tokens(memory.get("payload_summary", "")),
+            memory_id=memory["memory_id"],
+            scope=memory.get("scope"),
+            workflow_id=memory.get("workflow_id"),
+            agent=memory.get("agent"),
+        )
+
+
+def enforce_workflow_delegation(
+    state: RunState,
+    *,
+    capability: str,
+    tool_name: str | None,
+    target: dict,
+) -> None:
+    if state.workflow is None or not state.workflow.delegation:
+        return
+
+    reason = delegation_denial_reason(
+        state.workflow,
+        capability=capability,
+        tool_name=tool_name,
+    )
+    append_decision(
+        state,
+        stage="delegation_check",
+        capability=capability,
+        allowed=reason is None,
+        requires_approval=False,
+        reason=reason or f"Allowed by workflow `{state.workflow.workflow_id}` delegation",
+        target=target,
+    )
+    if reason is not None:
+        raise DelegationDeniedError(
+            reason,
+            capability=capability,
+            workflow_id=state.workflow.workflow_id,
+        )
+
+
 def success_response(state: RunState, *, agent_name: str) -> dict:
     workflow_data = workflow_snapshot(state.workflow) if state.workflow is not None else None
     if state.run_type == "tool":
@@ -430,6 +479,8 @@ def initialize_workflow(
     parent_workflow_id: str | None = None,
     root_workflow_id: str | None = None,
     workflow_depth: int = 0,
+    delegation: dict | None = None,
+    shared_memories: list[dict] | None = None,
 ) -> None:
     if approval_id is None:
         state.parent_run_id = parent_run_id
@@ -446,6 +497,8 @@ def initialize_workflow(
             parent_workflow_id=parent_workflow_id,
             root_workflow_id=root_workflow_id,
             depth=workflow_depth,
+            delegation=delegation,
+            shared_memories=shared_memories,
         )
         persist_workflow(state)
         return
@@ -818,6 +871,15 @@ def execute_tool_step(
         capability=action.capability,
     )
     persist_workflow(state)
+    enforce_workflow_delegation(
+        state,
+        capability=action.capability,
+        tool_name=tool_name,
+        target={
+            "tool": tool_name,
+            "args": tool_args or {},
+        },
+    )
     decision = evaluate_policy(policy, action)
     append_decision(
         state,
@@ -911,7 +973,12 @@ def execute_model_step(
     approval_id: str | None,
 ) -> dict | None:
     budget.consume_step()
-    state.prompt = build_prompt(user_input=user_input, config=agent_config)
+    append_shared_memory_sources(state)
+    state.prompt = build_prompt(
+        user_input=user_input,
+        config=agent_config,
+        shared_memories=state.workflow.shared_memories if state.workflow is not None else None,
+    )
     state.model_alias = agent_config["model"]
 
     append_context_source(
@@ -931,6 +998,14 @@ def execute_model_step(
         capability="model_call",
     )
     persist_workflow(state)
+    enforce_workflow_delegation(
+        state,
+        capability="model_call",
+        tool_name=None,
+        target={
+            "model_alias": state.model_alias,
+        },
+    )
 
     decision = evaluate_policy(
         policy,
@@ -1138,13 +1213,16 @@ def run_agent(
     tool_name: str | None = None,
     tool_args: dict | None = None,
     approval_id: str | None = None,
+    run_id: str | None = None,
     parent_run_id: str | None = None,
     parent_workflow_id: str | None = None,
     root_workflow_id: str | None = None,
     workflow_depth: int = 0,
+    delegation: dict | None = None,
+    shared_memories: list[dict] | None = None,
 ) -> dict:
     state = RunState(
-        run_id=str(uuid.uuid4()),
+        run_id=run_id or str(uuid.uuid4()),
         run_type="tool" if tool_name is not None else "model",
         started_at=time.perf_counter(),
     )
@@ -1161,6 +1239,8 @@ def run_agent(
             parent_workflow_id=parent_workflow_id,
             root_workflow_id=root_workflow_id,
             workflow_depth=workflow_depth,
+            delegation=delegation,
+            shared_memories=shared_memories,
         )
         agent_config = load_agent(agent_name)
         configure_workflow_for_agent(state, agent_config=agent_config)

@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 import api.main as main
-from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
+from runtime.errors import ApprovalStateError, BudgetExceededError, DelegationDeniedError, PolicyDeniedError
 
 
 class ApiTests(unittest.TestCase):
@@ -107,6 +107,44 @@ class ApiTests(unittest.TestCase):
                     "message": "Job type `workflow_resume` requires `workflow_id`",
                 },
             },
+        )
+
+    @patch.object(main, "create_job", return_value={"job_id": "job-123", "status": "queued"})
+    def test_job_create_workflow_subrun_includes_delegation_fields(self, mock_create_job) -> None:
+        response = main.job_create(
+            {
+                "type": "workflow_subrun",
+                "workflow_id": "wf-parent",
+                "agent": "researcher",
+                "role": "summarizer",
+                "allowed_capabilities": ["model_call"],
+                "shared_memory_ids": ["memory-123"],
+            }
+        )
+
+        self.assertEqual(response["job_id"], "job-123")
+        mock_create_job.assert_called_once_with(
+            job_type="workflow_subrun",
+            payload={
+                "input": "",
+                "agent": "researcher",
+                "tool": None,
+                "tool_args": None,
+                "approval_id": None,
+                "workflow_id": "wf-parent",
+                "role": "summarizer",
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": None,
+                "shared_memory_ids": ["memory-123"],
+            },
+            priority=100,
+            delay_seconds=0,
+            run_at=None,
+            workflow_id="wf-parent",
+            parent_job_id=None,
+            idempotency_key=None,
+            max_attempts=1,
+            retry_backoff_seconds=30,
         )
 
     @patch.object(main, "list_jobs", return_value=[{"job_id": "job-123"}])
@@ -397,7 +435,15 @@ class ApiTests(unittest.TestCase):
     def test_workflow_spawn_subrun_passthrough(self, mock_start_child_workflow) -> None:
         response = main.workflow_spawn_subrun(
             "workflow-123",
-            {"agent": "researcher", "tool": "echo", "tool_args": {"text": "hello"}},
+            {
+                "agent": "researcher",
+                "tool": "echo",
+                "tool_args": {"text": "hello"},
+                "role": "summarizer",
+                "allowed_capabilities": ["exec"],
+                "allowed_tools": ["echo"],
+                "shared_memory_ids": ["memory-123"],
+            },
         )
 
         self.assertEqual(response["status"], "success")
@@ -407,6 +453,34 @@ class ApiTests(unittest.TestCase):
             agent_name="researcher",
             tool_name="echo",
             tool_args={"text": "hello"},
+            role="summarizer",
+            allowed_capabilities=["exec"],
+            allowed_tools=["echo"],
+            shared_memory_ids=["memory-123"],
+        )
+
+    @patch.object(
+        main,
+        "start_child_workflow",
+        side_effect=DelegationDeniedError(
+            "delegation says no",
+            capability="model_call",
+            workflow_id="wf-parent",
+        ),
+    )
+    def test_workflow_spawn_subrun_delegation_error_returns_403(self, _mock_start_child_workflow) -> None:
+        response = main.workflow_spawn_subrun("workflow-123", {"agent": "researcher"})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "DelegationDeniedError",
+                    "message": "delegation says no",
+                },
+            },
         )
 
     @patch.object(

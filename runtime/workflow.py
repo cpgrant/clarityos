@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from runtime.policy import assert_valid_capability
+
 
 WORKFLOW_STEP_TYPES = {"model", "tool", "approval_wait", "retry_wait", "finish"}
 WORKFLOW_STATUSES = {"running", "waiting", "succeeded", "failed"}
@@ -54,7 +56,9 @@ class WorkflowState:
     request: dict
     artifacts: list[dict]
     memories: list[dict]
+    shared_memories: list[dict]
     subrun_policy: dict
+    delegation: dict
     retry_policy: dict
     retry_state: dict
     status: str
@@ -183,6 +187,39 @@ def normalize_retry_policy(retry_policy: dict | None) -> dict:
     }
 
 
+def normalize_optional_string(value: object, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Workflow `{field_name}` must be a non-empty string")
+    return value.strip()
+
+
+def normalize_string_list(value: object, *, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"Workflow `{field_name}` must be a list of strings")
+
+    normalized = []
+    seen = set()
+    for raw_item in value:
+        if not isinstance(raw_item, str) or not raw_item.strip():
+            raise ValueError(f"Workflow `{field_name}` must contain non-empty strings")
+        item = raw_item.strip()
+        if item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+    return normalized
+
+
+def normalize_optional_string_list(value: object, *, field_name: str) -> list[str] | None:
+    if value is None:
+        return None
+    return normalize_string_list(value, field_name=field_name)
+
+
 def default_retry_state(retry_policy: dict) -> dict:
     return {
         "attempts_used": 0,
@@ -196,15 +233,98 @@ def normalize_subrun_policy(subrun_policy: dict | None) -> dict:
     subrun_policy = subrun_policy or {}
     max_children = subrun_policy.get("max_children", 0)
     max_depth = subrun_policy.get("max_depth", 0)
+    allowed_agents = normalize_optional_string_list(subrun_policy.get("allowed_agents"), field_name="allowed_agents")
+    allowed_capabilities = normalize_optional_string_list(
+        subrun_policy.get("allowed_capabilities"),
+        field_name="allowed_capabilities",
+    )
+    allowed_tools = normalize_optional_string_list(subrun_policy.get("allowed_tools"), field_name="allowed_tools")
     if not isinstance(max_children, int) or max_children < 0:
         raise ValueError("Workflow subrun policy `max_children` must be a non-negative integer")
     if not isinstance(max_depth, int) or max_depth < 0:
         raise ValueError("Workflow subrun policy `max_depth` must be a non-negative integer")
+    for capability in allowed_capabilities or []:
+        assert_valid_capability(capability)
 
     return {
         "max_children": max_children,
         "max_depth": max_depth,
+        "allowed_agents": allowed_agents,
+        "allowed_capabilities": allowed_capabilities,
+        "allowed_tools": allowed_tools,
     }
+
+
+def normalize_delegation(delegation: dict | None) -> dict:
+    delegation = delegation or {}
+    if not delegation:
+        return {}
+
+    if not isinstance(delegation, dict):
+        raise ValueError("Workflow `delegation` must be an object")
+
+    allowed_capabilities = normalize_string_list(
+        delegation.get("allowed_capabilities"),
+        field_name="delegation.allowed_capabilities",
+    )
+    if not allowed_capabilities:
+        raise ValueError("Workflow `delegation.allowed_capabilities` must contain at least one capability")
+    for capability in allowed_capabilities:
+        assert_valid_capability(capability)
+
+    return {
+        "role": normalize_optional_string(delegation.get("role"), field_name="delegation.role"),
+        "assigned_by_workflow_id": normalize_optional_string(
+            delegation.get("assigned_by_workflow_id"),
+            field_name="delegation.assigned_by_workflow_id",
+        ),
+        "assigned_by_run_id": normalize_optional_string(
+            delegation.get("assigned_by_run_id"),
+            field_name="delegation.assigned_by_run_id",
+        ),
+        "allowed_capabilities": allowed_capabilities,
+        "allowed_tools": normalize_string_list(
+            delegation.get("allowed_tools"),
+            field_name="delegation.allowed_tools",
+        ),
+    }
+
+
+def normalize_shared_memories(shared_memories: list[dict] | None) -> list[dict]:
+    if shared_memories is None:
+        return []
+    if not isinstance(shared_memories, list):
+        raise ValueError("Workflow `shared_memories` must be a list")
+
+    normalized = []
+    for memory in shared_memories:
+        if not isinstance(memory, dict):
+            raise ValueError("Workflow `shared_memories` entries must be objects")
+        if not isinstance(memory.get("memory_id"), str) or not memory["memory_id"].strip():
+            raise ValueError("Workflow shared memory entries must include `memory_id`")
+        normalized.append(dict(memory))
+    return normalized
+
+
+def delegation_denial_reason(
+    workflow: WorkflowState,
+    *,
+    capability: str,
+    tool_name: str | None = None,
+) -> str | None:
+    if not workflow.delegation:
+        return None
+
+    allowed_capabilities = workflow.delegation["allowed_capabilities"]
+    if capability not in allowed_capabilities:
+        return (
+            f"Workflow `{workflow.workflow_id}` delegation does not allow capability `{capability}`"
+        )
+
+    if tool_name is not None and tool_name not in workflow.delegation["allowed_tools"]:
+        return f"Workflow `{workflow.workflow_id}` delegation does not allow tool `{tool_name}`"
+
+    return None
 
 
 def create_workflow_state(
@@ -216,6 +336,8 @@ def create_workflow_state(
     parent_workflow_id: str | None = None,
     root_workflow_id: str | None = None,
     depth: int = 0,
+    delegation: dict | None = None,
+    shared_memories: list[dict] | None = None,
 ) -> WorkflowState:
     assert_valid_step_type(run_type)
     if not isinstance(depth, int) or depth < 0:
@@ -246,7 +368,9 @@ def create_workflow_state(
         request=dict(request or {}),
         artifacts=[],
         memories=[],
+        shared_memories=normalize_shared_memories(shared_memories),
         subrun_policy=normalize_subrun_policy(None),
+        delegation=normalize_delegation(delegation),
         retry_policy=normalize_retry_policy(None),
         retry_state=default_retry_state(normalize_retry_policy(None)),
         status="running",
@@ -472,7 +596,9 @@ def workflow_snapshot(workflow: WorkflowState) -> dict:
         "request": dict(workflow.request),
         "artifacts": [dict(artifact) for artifact in workflow.artifacts],
         "memories": [dict(memory) for memory in workflow.memories],
+        "shared_memories": [dict(memory) for memory in workflow.shared_memories],
         "subrun_policy": dict(workflow.subrun_policy),
+        "delegation": dict(workflow.delegation),
         "retry_policy": dict(workflow.retry_policy),
         "retry_state": {
             **workflow.retry_state,
@@ -530,7 +656,9 @@ def load_workflow(workflow_id: str) -> WorkflowState:
         request=data.get("request", {}),
         artifacts=data.get("artifacts", []),
         memories=data.get("memories", []),
+        shared_memories=normalize_shared_memories(data.get("shared_memories")),
         subrun_policy=normalize_subrun_policy(data.get("subrun_policy")),
+        delegation=normalize_delegation(data.get("delegation")),
         retry_policy=normalize_retry_policy(data.get("retry_policy")),
         retry_state=data.get(
             "retry_state",
