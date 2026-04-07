@@ -116,6 +116,7 @@ For Ollama-backed agents:
 ```bash
 ollama serve
 ollama pull llama3.1:latest
+ollama pull gemma4:26b
 ```
 
 The default Ollama base URL is `http://127.0.0.1:11434`. Set `OLLAMA_BASE_URL` only if your Ollama server is elsewhere.
@@ -171,6 +172,14 @@ Run the local Ollama-backed agent:
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"input":"Explain agents simply","agent":"local"}'
+```
+
+Run the local Gemma-backed agent:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Explain agents simply","agent":"local_gemma"}'
 ```
 
 Run an allowed tool directly:

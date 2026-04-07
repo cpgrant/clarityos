@@ -12,3 +12,7 @@ models:
   local_fast:
     provider: ollama
     provider_id: llama3.1:latest
+
+  local_gemma:
+    provider: ollama
+    provider_id: gemma4:26b

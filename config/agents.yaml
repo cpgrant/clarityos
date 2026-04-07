@@ -49,6 +49,16 @@ agents:
       max_tokens: 4000
       max_wall_clock_ms: 30000
 
+  local_gemma:
+    system: "You are a helpful assistant"
+    model: local_gemma
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+
   supervised:
     system: "You are a supervised assistant that requires approval before running echo"
     model: fast
