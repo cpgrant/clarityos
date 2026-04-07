@@ -53,6 +53,7 @@ class WorkflowState:
     run_type: str
     request: dict
     artifacts: list[dict]
+    memories: list[dict]
     subrun_policy: dict
     retry_policy: dict
     retry_state: dict
@@ -244,6 +245,7 @@ def create_workflow_state(
         run_type=run_type,
         request=dict(request or {}),
         artifacts=[],
+        memories=[],
         subrun_policy=normalize_subrun_policy(None),
         retry_policy=normalize_retry_policy(None),
         retry_state=default_retry_state(normalize_retry_policy(None)),
@@ -286,6 +288,15 @@ def register_artifact(workflow: WorkflowState, artifact: dict) -> None:
         if existing["artifact_id"] == artifact_id:
             return
     workflow.artifacts.append(dict(artifact))
+
+
+def register_memory(workflow: WorkflowState, memory: dict) -> None:
+    memory_id = memory["memory_id"]
+    for index, existing in enumerate(workflow.memories):
+        if existing["memory_id"] == memory_id:
+            workflow.memories[index] = dict(memory)
+            return
+    workflow.memories.append(dict(memory))
 
 
 def can_spawn_child_workflow(workflow: WorkflowState) -> bool:
@@ -460,6 +471,7 @@ def workflow_snapshot(workflow: WorkflowState) -> dict:
         "run_type": workflow.run_type,
         "request": dict(workflow.request),
         "artifacts": [dict(artifact) for artifact in workflow.artifacts],
+        "memories": [dict(memory) for memory in workflow.memories],
         "subrun_policy": dict(workflow.subrun_policy),
         "retry_policy": dict(workflow.retry_policy),
         "retry_state": {
@@ -517,6 +529,7 @@ def load_workflow(workflow_id: str) -> WorkflowState:
         run_type=data["run_type"],
         request=data.get("request", {}),
         artifacts=data.get("artifacts", []),
+        memories=data.get("memories", []),
         subrun_policy=normalize_subrun_policy(data.get("subrun_policy")),
         retry_policy=normalize_retry_policy(data.get("retry_policy")),
         retry_state=data.get(

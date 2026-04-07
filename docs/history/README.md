@@ -9,3 +9,6 @@ Available snapshots:
 - `v0.1.md`
 - `v0.3.md`
 - `v0.6.md`
+- `v0.7.md`
+
+Latest archived milestone: `v0.7`

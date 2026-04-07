@@ -26,6 +26,8 @@ class PolicyAction:
     path: str | None = None
     domain: str | None = None
     command: str | None = None
+    memory_type: str | None = None
+    scope_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,24 @@ def rule_matches(rule: dict, action: PolicyAction) -> tuple[bool, str | None]:
             return False, None
 
         return True, f"command:{action.command}"
+
+    if "memory_types" in rule or "scope_kinds" in rule:
+        if "memory_types" in rule:
+            if action.memory_type is None or not any(
+                fnmatch(action.memory_type, pattern) for pattern in rule["memory_types"]
+            ):
+                return False, None
+        if "scope_kinds" in rule:
+            if action.scope_kind is None or not any(
+                fnmatch(action.scope_kind, pattern) for pattern in rule["scope_kinds"]
+            ):
+                return False, None
+        details = []
+        if action.memory_type is not None:
+            details.append(f"memory_type:{action.memory_type}")
+        if action.scope_kind is not None:
+            details.append(f"scope_kind:{action.scope_kind}")
+        return True, ",".join(details) if details else None
 
     return True, None
 

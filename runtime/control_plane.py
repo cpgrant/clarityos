@@ -1,5 +1,6 @@
 from runtime.approval import approval_summary, list_approvals_for_workflow
 from runtime.artifact import artifact_summary, list_artifacts_for_workflow
+from runtime.memory import memory_summary
 from runtime.workflow import can_spawn_child_workflow, current_step, load_workflow, workflow_snapshot
 
 
@@ -50,6 +51,13 @@ def workflow_actions(workflow, approvals: list[dict]) -> dict:
             }
             for artifact in workflow.artifacts
         ],
+        "memories": [
+            {
+                "memory_id": memory["memory_id"],
+                "artifact_id": memory.get("artifact_id"),
+            }
+            for memory in workflow.memories
+        ],
     }
 
 
@@ -61,6 +69,7 @@ def workflow_control_view(workflow_id: str) -> dict:
         artifact_summary(artifact)
         for artifact in list_artifacts_for_workflow(workflow_id)
     ]
+    memories = [memory_summary(memory) for memory in workflow.memories]
     children, missing_child_workflow_ids = child_workflow_views(workflow)
     step = current_step(workflow)
 
@@ -75,6 +84,7 @@ def workflow_control_view(workflow_id: str) -> dict:
         },
         "approvals": approvals,
         "artifacts": artifacts,
+        "memories": memories,
         "child_workflows": children,
         "missing_child_workflow_ids": missing_child_workflow_ids,
         "actions": workflow_actions(workflow, approvals),

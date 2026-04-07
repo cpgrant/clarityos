@@ -26,6 +26,19 @@ agents:
       - get_time
       - read_file
 
+  memory_operator:
+    system: "You manage explicit memory records and retrieval results"
+    model: fast
+    policy: memory_basic
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - memory_write
+      - memory_query
+
   local:
     system: "You are a helpful assistant"
     model: local_fast

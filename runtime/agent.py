@@ -18,6 +18,7 @@ from runtime.approval import (
 from runtime.budget import estimate_tokens, load_budget
 from runtime.contracts import exception_from_tool_result
 from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
+from runtime.memory import memory_summary
 from runtime.model import call_model
 from runtime.policy import PolicyAction, build_agent_policy, evaluate_policy, snapshot_policy
 from runtime.prompt_builder import build_prompt
@@ -34,6 +35,7 @@ from runtime.workflow import (
     load_workflow,
     mark_action_completed,
     register_artifact,
+    register_memory,
     resume_from_approval,
     resume_from_retry,
     set_action_details,
@@ -794,11 +796,20 @@ def execute_tool_step(
     if tool_name not in allowed_tools:
         raise ValueError(f"Tool not allowed for agent `{agent_name}`: {tool_name}")
 
+    if tool_name == "memory_write":
+        tool_args = dict(tool_args or {})
+        tool_args.setdefault("agent", agent_name)
+        if state.workflow is not None:
+            tool_args.setdefault("workflow_id", state.workflow.workflow_id)
+        tool_args.setdefault("run_id", state.run_id)
+
     tool_definition = get_tool_definition(tool_name)
     action = PolicyAction(
         capability=tool_definition["capability"],
         path=(tool_args or {}).get(tool_definition.get("path_arg", "")),
         command=tool_definition.get("command"),
+        memory_type=(tool_args or {}).get("memory_type"),
+        scope_kind=(tool_args or {}).get("scope_kind"),
     )
     set_action_details(
         state.workflow,
@@ -873,6 +884,8 @@ def execute_tool_step(
         raise exception_from_tool_result(state.tool_result)
 
     state.tool_output = state.tool_result["output"]["value"]
+    if tool_name == "memory_write" and state.workflow is not None and isinstance(state.tool_output, dict):
+        register_memory(state.workflow, memory_summary(state.tool_output))
     budget.consume_tokens(estimate_tokens(state.tool_output))
     budget.ensure_wall_clock_remaining()
     state.budget_used = budget.usage_snapshot()

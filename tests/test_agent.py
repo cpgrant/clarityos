@@ -8,6 +8,7 @@ import runtime.artifact as artifact
 import runtime.approval as approval
 import runtime.agent as agent
 import runtime.contracts as contracts
+import runtime.memory as memory
 import runtime.policy as policy
 import runtime.trace as trace
 import runtime.tools as tools
@@ -29,12 +30,14 @@ class RunAgentTests(unittest.TestCase):
         self.log_dir = self.root_dir / "logs"
         self.approvals_dir = self.root_dir / "approvals"
         self.artifacts_dir = self.root_dir / "artifacts"
+        self.memories_dir = self.root_dir / "memories"
         self.workflows_dir = self.root_dir / "workflows"
         self.repo_dir = self.root_dir / "repo"
         self.repo_dir.mkdir()
         self.log_dir.mkdir()
         self.approvals_dir.mkdir()
         self.artifacts_dir.mkdir()
+        self.memories_dir.mkdir()
         self.workflows_dir.mkdir()
         self.agents_config = self.root_dir / "agents.yaml"
         self.policies_config = self.root_dir / "policies.yaml"
@@ -71,6 +74,31 @@ agents:
     tools:
       - get_time
       - read_file
+
+  memory_tool:
+    system: "You manage explicit memory operations"
+    model: fast
+    policy: memory_basic
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - memory_write
+      - memory_query
+
+  blocked_memory:
+    system: "You can ask for memory tools but policy still denies them"
+    model: fast
+    policy: safe_readonly
+    budgets:
+      max_steps: 4
+      max_tool_calls: 2
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - memory_query
 
   local:
     system: "You are a helpful assistant"
@@ -190,6 +218,29 @@ policies:
       - capability: http
       - capability: memory_read
       - capability: memory_write
+
+  memory_basic:
+    allow:
+      - capability: model_call
+      - capability: memory_read
+        scope_kinds:
+          - global
+          - agent
+          - workflow
+          - run
+      - capability: memory_write
+        memory_types:
+          - fact
+          - summary
+          - observation
+          - artifact_ref
+        scope_kinds:
+          - agent
+          - workflow
+          - run
+    deny:
+      - capability: file_write
+      - capability: http
 """.strip()
             + "\n",
             encoding="utf-8",
@@ -197,6 +248,7 @@ policies:
         self.trace_patcher = patch.object(trace, "LOG_DIR", self.log_dir)
         self.approval_dir_patcher = patch.object(approval, "APPROVAL_DIR", self.approvals_dir)
         self.artifact_dir_patcher = patch.object(artifact, "ARTIFACT_DIR", self.artifacts_dir)
+        self.memory_dir_patcher = patch.object(memory, "MEMORY_DIR", self.memories_dir)
         self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflows_dir)
         self.tools_base_dir_patcher = patch.object(tools, "BASE_DIR", self.repo_dir)
         self.agents_config_patcher = patch.object(agent, "AGENTS_CONFIG_PATH", self.agents_config)
@@ -207,6 +259,7 @@ policies:
         self.trace_patcher.start()
         self.approval_dir_patcher.start()
         self.artifact_dir_patcher.start()
+        self.memory_dir_patcher.start()
         self.workflow_dir_patcher.start()
         self.tools_base_dir_patcher.start()
         self.agents_config_patcher.start()
@@ -217,6 +270,7 @@ policies:
         self.trace_patcher.stop()
         self.approval_dir_patcher.stop()
         self.artifact_dir_patcher.stop()
+        self.memory_dir_patcher.stop()
         self.workflow_dir_patcher.stop()
         self.tools_base_dir_patcher.stop()
         self.agents_config_patcher.stop()
@@ -263,7 +317,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(payload["version"], "v0.6")
+        self.assertEqual(payload["version"], "v0.7")
         self.assertEqual(payload["schema"], "trace.v2")
         self.assertEqual(payload["agent"], "default")
         self.assertEqual(payload["workflow"]["status"], "succeeded")
@@ -380,6 +434,122 @@ policies:
         self.assertEqual(payload["result"]["tool"]["output"]["value"], "sample repo file\n")
         self.assertTrue(payload["result"]["tool"]["ok"])
 
+    def test_run_agent_memory_write_tool_success(self) -> None:
+        result = agent.run_agent(
+            "",
+            "memory_tool",
+            tool_name="memory_write",
+            tool_args={
+                "memory_type": "fact",
+                "scope_kind": "agent",
+                "agent": "researcher",
+                "payload": {"statement": "Retries are bounded", "subject": "retry"},
+                "tags": ["runtime", "retry"],
+            },
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["run_type"], "tool")
+        self.assertEqual(result["tool"], "memory_write")
+        self.assertEqual(result["tool_output"]["memory_type"], "fact")
+        self.assertEqual(result["tool_output"]["scope"], {"kind": "agent", "value": "researcher"})
+        saved_memory = memory.load_memory(result["tool_output"]["memory_id"])
+        self.assertEqual(saved_memory["payload"]["statement"], "Retries are bounded")
+        self.assertEqual(saved_memory["tags"], ["runtime", "retry"])
+        self.assertEqual(saved_memory["agent"], "researcher")
+        self.assertEqual(saved_memory["workflow_id"], result["workflow"]["workflow_id"])
+        self.assertEqual(saved_memory["run_id"], result["workflow"]["latest_run_id"])
+        self.assertEqual(result["workflow"]["memories"][0]["memory_id"], saved_memory["memory_id"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["result"]["tool"]["name"], "memory_write")
+        self.assertEqual(payload["result"]["tool"]["input"]["args"]["memory_type"], "fact")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["memory_type"], "fact")
+
+    def test_run_agent_memory_query_tool_success(self) -> None:
+        memory.create_memory(
+            memory_type="summary",
+            scope_kind="agent",
+            agent="researcher",
+            payload={"text": "Retry backoff prevents hot looping"},
+            tags=["retry"],
+        )
+        memory.create_memory(
+            memory_type="fact",
+            scope_kind="agent",
+            agent="researcher",
+            payload={"statement": "Queue processing is durable", "subject": "queue"},
+            tags=["queue"],
+        )
+
+        result = agent.run_agent(
+            "",
+            "memory_tool",
+            tool_name="memory_query",
+            tool_args={
+                "query": "retry",
+                "scope_kind": "agent",
+                "agent": "researcher",
+                "limit": 2,
+                "max_chars": 200,
+            },
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "memory_query")
+        self.assertEqual(result["tool_output"]["query"], "retry")
+        self.assertEqual(result["tool_output"]["result_count"], 1)
+        self.assertEqual(result["tool_output"]["results"][0]["memory_type"], "summary")
+        self.assertIn("retry", result["tool_output"]["results"][0]["matched_terms"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["result"]["tool"]["name"], "memory_query")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "retry")
+
+    def test_run_agent_memory_query_denied_by_policy(self) -> None:
+        with self.assertRaisesRegex(
+            PermissionError, "Denied by policy `safe_readonly` for capability `memory_read`"
+        ):
+            agent.run_agent(
+                "",
+                "blocked_memory",
+                tool_name="memory_query",
+                tool_args={"query": "retry", "scope_kind": "agent"},
+            )
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["result"]["tool"]["name"], "memory_query")
+        self.assertEqual(payload["result"]["tool"]["error"]["error_type"], "PolicyDeniedError")
+        self.assertFalse(payload["decision_log"][0]["allowed"])
+
+    def test_run_agent_memory_write_global_scope_denied_by_policy(self) -> None:
+        with self.assertRaisesRegex(
+            PermissionError, "No allow rule matched in policy `memory_basic` for capability `memory_write`"
+        ):
+            agent.run_agent(
+                "",
+                "memory_tool",
+                tool_name="memory_write",
+                tool_args={
+                    "memory_type": "fact",
+                    "scope_kind": "global",
+                    "payload": {"statement": "global memory is restricted"},
+                },
+            )
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["result"]["tool"]["name"], "memory_write")
+        self.assertEqual(payload["result"]["tool"]["error"]["error_type"], "PolicyDeniedError")
+        self.assertFalse(payload["decision_log"][0]["allowed"])
+
     def test_run_agent_disallowed_tool_logs_error(self) -> None:
         with self.assertRaisesRegex(
             ValueError, "Tool not allowed for agent `researcher`: echo"
@@ -481,7 +651,7 @@ policies:
 
         self.assertEqual(payload["run_type"], "model")
         self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["version"], "v0.6")
+        self.assertEqual(payload["version"], "v0.7")
         self.assertEqual(payload["workflow"]["status"], "failed")
         self.assertEqual(payload["context"]["input"], "hello")
         self.assertEqual(payload["agent"], "missing")

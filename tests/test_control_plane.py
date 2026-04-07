@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import runtime.approval as approval
 import runtime.artifact as artifact
+import runtime.memory as memory
 import runtime.workflow as workflow
 from runtime.control_plane import workflow_control_view
 
@@ -15,20 +16,25 @@ class ControlPlaneTests(unittest.TestCase):
         self.root_dir = Path(self.temp_dir.name)
         self.approval_dir = self.root_dir / "approvals"
         self.artifact_dir = self.root_dir / "artifacts"
+        self.memory_dir = self.root_dir / "memories"
         self.workflow_dir = self.root_dir / "workflows"
         self.approval_dir.mkdir()
         self.artifact_dir.mkdir()
+        self.memory_dir.mkdir()
         self.workflow_dir.mkdir()
         self.approval_dir_patcher = patch.object(approval, "APPROVAL_DIR", self.approval_dir)
         self.artifact_dir_patcher = patch.object(artifact, "ARTIFACT_DIR", self.artifact_dir)
+        self.memory_dir_patcher = patch.object(memory, "MEMORY_DIR", self.memory_dir)
         self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflow_dir)
         self.approval_dir_patcher.start()
         self.artifact_dir_patcher.start()
+        self.memory_dir_patcher.start()
         self.workflow_dir_patcher.start()
 
     def tearDown(self) -> None:
         self.approval_dir_patcher.stop()
         self.artifact_dir_patcher.stop()
+        self.memory_dir_patcher.stop()
         self.workflow_dir_patcher.stop()
         self.temp_dir.cleanup()
 
@@ -64,6 +70,16 @@ class ControlPlaneTests(unittest.TestCase):
             metadata={"tool": "echo"},
         )
         workflow.register_artifact(parent, artifact.artifact_summary(saved_artifact))
+        saved_memory = memory.create_memory(
+            memory_type="artifact_ref",
+            scope_kind="workflow",
+            workflow_id=parent.workflow_id,
+            run_id="run-1",
+            agent="default",
+            payload={"artifact_id": saved_artifact["artifact_id"], "description": "result memory"},
+            tags=["artifact"],
+        )
+        workflow.register_memory(parent, memory.memory_summary(saved_memory))
         child = workflow.create_workflow_state(
             run_id="wf-child",
             agent="researcher",
@@ -84,11 +100,15 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(view["approvals"][0]["approval_id"], approval_record["approval_id"])
         self.assertEqual(len(view["artifacts"]), 1)
         self.assertEqual(view["artifacts"][0]["artifact_id"], saved_artifact["artifact_id"])
+        self.assertEqual(len(view["memories"]), 1)
+        self.assertEqual(view["memories"][0]["memory_id"], saved_memory["memory_id"])
+        self.assertEqual(view["memories"][0]["artifact_id"], saved_artifact["artifact_id"])
         self.assertEqual(len(view["child_workflows"]), 1)
         self.assertEqual(view["child_workflows"][0]["workflow_id"], "wf-child")
         self.assertEqual(view["actions"]["resume"]["available"], True)
         self.assertEqual(view["actions"]["approvals"][0]["approve_path"], f"/approvals/{approval_record['approval_id']}/approve")
         self.assertEqual(view["actions"]["artifacts"][0]["path"], f"/artifacts/{saved_artifact['artifact_id']}")
+        self.assertEqual(view["actions"]["memories"][0]["memory_id"], saved_memory["memory_id"])
 
 
 if __name__ == "__main__":

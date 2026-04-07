@@ -5,6 +5,7 @@ from runtime.artifact import load_artifact
 from runtime.approval import abort_approval, approve_approval, deny_approval, get_approval
 from runtime.control_plane import workflow_control_view
 from runtime.errors import ApprovalStateError, BudgetExceededError, PolicyDeniedError
+from runtime.memory import delete_memory, list_memories, load_memory
 from runtime.queue import create_job, list_jobs, load_job, promote_due_jobs, queue_summary, reschedule_job
 from runtime.worker import (
     cancel_job_execution,
@@ -19,7 +20,7 @@ from runtime.worker import (
 )
 from runtime.workflow_runner import resume_workflow, start_child_workflow, start_workflow
 
-app = FastAPI(title="ClarityOS", version="0.6.0")
+app = FastAPI(title="ClarityOS", version="0.7.0")
 
 
 @app.get("/status")
@@ -265,6 +266,55 @@ def approval_status(approval_id: str):
 def artifact_status(artifact_id: str):
     try:
         return load_artifact(artifact_id)
+    except Exception as exc:
+        return error_response(exc)
+
+
+def parse_tags_param(tags: str | None) -> list[str] | None:
+    if tags is None:
+        return None
+    parsed = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    return parsed or None
+
+
+@app.get("/memories")
+def memory_list(
+    memory_type: str | None = None,
+    scope_kind: str | None = None,
+    agent: str | None = None,
+    workflow_id: str | None = None,
+    run_id: str | None = None,
+    tags: str | None = None,
+    limit: int | None = None,
+):
+    try:
+        return {
+            "memories": list_memories(
+                memory_type=memory_type,
+                scope_kind=scope_kind,
+                agent=agent,
+                workflow_id=workflow_id,
+                run_id=run_id,
+                tags=parse_tags_param(tags),
+                limit=limit,
+            ),
+        }
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/memories/{memory_id}")
+def memory_status(memory_id: str):
+    try:
+        return load_memory(memory_id)
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/memories/{memory_id}/delete")
+def memory_delete(memory_id: str):
+    try:
+        return delete_memory(memory_id)
     except Exception as exc:
         return error_response(exc)
 

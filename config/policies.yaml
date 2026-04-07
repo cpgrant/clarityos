@@ -30,3 +30,26 @@ policies:
       - capability: http
       - capability: memory_read
       - capability: memory_write
+
+  memory_basic:
+    allow:
+      - capability: model_call
+      - capability: memory_read
+        scope_kinds:
+          - global
+          - agent
+          - workflow
+          - run
+      - capability: memory_write
+        memory_types:
+          - fact
+          - summary
+          - observation
+          - artifact_ref
+        scope_kinds:
+          - agent
+          - workflow
+          - run
+    deny:
+      - capability: file_write
+      - capability: http

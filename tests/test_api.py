@@ -327,6 +327,43 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["artifact_id"], "artifact-123")
         self.assertEqual(response["kind"], "tool_output")
 
+    @patch.object(main, "list_memories", return_value=[{"memory_id": "memory-123"}])
+    def test_memory_list_passthrough(self, mock_list_memories) -> None:
+        response = main.memory_list(
+            memory_type="fact",
+            scope_kind="agent",
+            agent="researcher",
+            workflow_id="wf-123",
+            run_id="run-123",
+            tags="runtime,retry",
+            limit=5,
+        )
+
+        self.assertEqual(response["memories"], [{"memory_id": "memory-123"}])
+        mock_list_memories.assert_called_once_with(
+            memory_type="fact",
+            scope_kind="agent",
+            agent="researcher",
+            workflow_id="wf-123",
+            run_id="run-123",
+            tags=["runtime", "retry"],
+            limit=5,
+        )
+
+    @patch.object(main, "load_memory", return_value={"memory_id": "memory-123", "memory_type": "fact"})
+    def test_memory_status_passthrough(self, _mock_load_memory) -> None:
+        response = main.memory_status("memory-123")
+
+        self.assertEqual(response["memory_id"], "memory-123")
+        self.assertEqual(response["memory_type"], "fact")
+
+    @patch.object(main, "delete_memory", return_value={"memory_id": "memory-123", "memory_type": "fact"})
+    def test_memory_delete_passthrough(self, _mock_delete_memory) -> None:
+        response = main.memory_delete("memory-123")
+
+        self.assertEqual(response["memory_id"], "memory-123")
+        self.assertEqual(response["memory_type"], "fact")
+
     @patch.object(
         main,
         "approve_approval",

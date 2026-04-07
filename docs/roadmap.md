@@ -4,6 +4,12 @@ This document is the detailed milestone plan for ClarityOS.
 
 Update this file first when milestone scope changes, then keep the summary in the repository root `README.md` aligned with it.
 
+## Current Status
+
+- Latest completed milestone: `v0.7`
+- Next planned milestone: `v0.8`
+- Next planned slice: `v0.8` slice 1 bounded delegation foundations
+
 ## Milestones
 
 1. `v0.1` - execution
@@ -31,18 +37,18 @@ Status: completed
 Status: completed
 
 9. `v0.7` - memory and retrieval
-Status: planned
+Status: completed
 
 Goal:
 Add explicit, typed memory and bounded retrieval without breaking the runtime's inspectability.
 
 Slices:
 
-- Slice 1: typed memory layers
-- Slice 2: bounded retrieval
-- Slice 3: agent integration
-- Slice 4: workflow memory lifecycle
-- Slice 5: retrieval safety and operator controls
+- Slice 1: typed memory layers - completed
+- Slice 2: bounded retrieval - completed
+- Slice 3: agent integration - completed
+- Slice 4: workflow memory lifecycle - completed
+- Slice 5: retrieval safety and operator controls - completed
 
 Acceptance criteria:
 
@@ -59,6 +65,13 @@ Status: planned
 Goal:
 Coordinate multiple agents through explicit workflows, bounded delegation, and scoped memory access.
 
+Slices:
+
+- Slice 1: bounded delegation foundations - planned
+- Slice 2: child workflow execution and lineage - planned
+- Slice 3: scoped shared memory handoff - planned
+- Slice 4: operator inspection and failure isolation - planned
+
 Acceptance criteria:
 
 - Workflows can coordinate bounded child agents with explicit lineage and role assignment.
@@ -73,6 +86,13 @@ Status: planned
 
 Goal:
 Prepare the runtime for sustained production operation with recovery, governance, and operational visibility.
+
+Slices:
+
+- Slice 1: state versioning and migrations - planned
+- Slice 2: operator recovery and pruning controls - planned
+- Slice 3: observability and incident debugging - planned
+- Slice 4: auth, deployment, and resilience hardening - planned
 
 Acceptance criteria:
 

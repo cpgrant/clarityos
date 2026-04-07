@@ -16,6 +16,7 @@ from runtime.workflow import (
     mark_action_completed,
     register_child_workflow,
     register_artifact,
+    register_memory,
     resume_from_retry,
     resume_from_approval,
     set_action_details,
@@ -157,6 +158,35 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(len(loaded.artifacts), 1)
         self.assertEqual(loaded.artifacts[0]["artifact_id"], "artifact-123")
+
+    def test_write_and_load_workflow_persists_memories(self) -> None:
+        workflow = create_workflow_state(
+            run_id="run-123",
+            agent="default",
+            run_type="tool",
+        )
+        register_memory(
+            workflow,
+            {
+                "memory_id": "memory-123",
+                "memory_type": "fact",
+                "scope": {"kind": "workflow", "value": "run-123"},
+                "agent": "default",
+                "workflow_id": "run-123",
+                "run_id": "run-123",
+                "tags": ["runtime"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "metadata": {},
+                "payload_summary": "Retries are bounded",
+            },
+        )
+
+        write_workflow(workflow)
+        loaded = load_workflow(workflow.workflow_id)
+
+        self.assertEqual(len(loaded.memories), 1)
+        self.assertEqual(loaded.memories[0]["memory_id"], "memory-123")
 
     def test_wait_for_approval_blocks_action_and_adds_step(self) -> None:
         workflow = create_workflow_state(
