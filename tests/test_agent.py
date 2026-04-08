@@ -311,7 +311,7 @@ policies:
 
     @patch.object(agent, "call_model", side_effect=fake_model)
     def test_trace_created_for_success(self, _mock_call_model) -> None:
-        agent.run_agent("hello", "default")
+        result = agent.run_agent("hello", "default", job_id="job-123", worker_id="worker-123")
 
         payload = self.latest_log()
 
@@ -338,6 +338,15 @@ policies:
         self.assertEqual(payload["source_attribution"]["output"]["type"], "model")
         self.assertGreater(payload["cost_accounting"]["estimated_tokens"]["total"], 0)
         self.assertEqual(payload["cost_accounting"]["operations"]["model_calls"], 1)
+        self.assertEqual(payload["correlation_ids"]["run_ids"], [payload["run_id"]])
+        self.assertEqual(payload["correlation_ids"]["workflow_ids"], [result["workflow"]["workflow_id"]])
+        self.assertEqual(payload["correlation_ids"]["job_ids"], ["job-123"])
+        self.assertEqual(payload["correlation_ids"]["worker_ids"], ["worker-123"])
+        self.assertEqual(payload["correlation_ids"]["artifact_ids"], [result["artifacts"][0]["artifact_id"]])
+        self.assertEqual(payload["correlation_ids"]["memory_ids"], [])
+        self.assertEqual(payload["correlation_ids"]["shared_memory_ids"], [])
+        self.assertEqual(payload["correlation_ids"]["child_workflow_ids"], [])
+        self.assertEqual(payload["correlation_ids"]["delegation"], {})
         self.assertIn("run_id", payload)
         self.assertIn("duration_ms", payload)
         self.assertIn("timestamp", payload)
@@ -379,6 +388,19 @@ policies:
         self.assertEqual(payload["decision_log"][0]["stage"], "delegation_check")
         self.assertEqual(payload["source_attribution"]["context"][0]["type"], "shared_memory")
         self.assertEqual(payload["source_attribution"]["context"][0]["memory_id"], "memory-123")
+        self.assertEqual(payload["correlation_ids"]["run_ids"], [payload["run_id"], "run-parent"])
+        self.assertEqual(
+            payload["correlation_ids"]["workflow_ids"],
+            [result["workflow"]["workflow_id"], "wf-parent"],
+        )
+        self.assertEqual(payload["correlation_ids"]["shared_memory_ids"], ["memory-123"])
+        self.assertEqual(
+            payload["correlation_ids"]["delegation"],
+            {
+                "assigned_by_workflow_id": "wf-parent",
+                "assigned_by_run_id": "run-parent",
+            },
+        )
 
     def test_run_agent_tool_success(self) -> None:
         result = agent.run_agent(

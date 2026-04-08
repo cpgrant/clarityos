@@ -4,13 +4,15 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v0.8`
-- Current focus: `v0.9` production hardening
-- Next target: `v0.9` slice 1 state versioning and migrations
+- Current release: `v0.9`
+- Current focus: `v1.0` release readiness
+- Next target: `v1.0` slice 1 soak, load, and recovery validation
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
 `v0.8` completes bounded delegation, child workflow lineage, explicit child role metadata, scoped shared-memory handoff, and operator-facing failure inspection.
+
+`v0.9` completes state versioning and migrations, operator recovery and pruning controls, incident-correlation observability, operator auth, production policy hardening, and restart/partial-failure validation.
 
 ## Historical Docs
 
@@ -21,6 +23,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v0.6.md`
 - `docs/history/v0.7.md`
 - `docs/history/v0.8.md`
+- `docs/history/v0.9.md`
 
 ## What It Does
 
@@ -48,13 +51,16 @@ clarityos/
 │   └── main.py
 ├── docs/
 │   ├── roadmap.md
+│   ├── v0.9-checklist.md
+│   ├── v1.0-checklist.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
 │       ├── v0.3.md
 │       ├── v0.6.md
 │       ├── v0.7.md
-│       └── v0.8.md
+│       ├── v0.8.md
+│       └── v0.9.md
 ├── memories/
 ├── jobs/
 ├── workers/
@@ -76,6 +82,7 @@ clarityos/
 │   ├── policy.py
 │   ├── prompt_builder.py
 │   ├── queue.py
+│   ├── state.py
 │   ├── trace.py
 │   ├── tools.py
 │   ├── worker.py
@@ -89,7 +96,10 @@ clarityos/
 │   ├── test_api.py
 │   ├── test_control_plane.py
 │   ├── test_memory.py
+│   ├── test_persistence_versions.py
+│   ├── test_policy.py
 │   ├── test_queue.py
+│   ├── test_resilience.py
 │   ├── test_worker.py
 │   ├── test_workflow.py
 │   └── test_workflow_runner.py
@@ -125,6 +135,26 @@ ollama pull gemma4:26b
 
 The default Ollama base URL is `http://127.0.0.1:11434`. Set `OLLAMA_BASE_URL` only if your Ollama server is elsewhere.
 
+For operator auth on control-plane endpoints:
+
+```bash
+export CLARITYOS_OPERATOR_TOKEN=replace_me_with_a_long_random_token
+```
+
+When `CLARITYOS_OPERATOR_TOKEN` is set, operator and control-plane endpoints require the `X-Operator-Token` header. If the variable is unset, operator auth stays disabled for local development.
+
+For production policy hardening:
+
+```bash
+export CLARITYOS_ENV=production
+```
+
+In production mode, policies must explicitly deny `file_write` and `http`, and dangerous capability rules such as `exec`, `http`, and `file_write` must stay narrowly scoped. Agent-level policy overrides are disabled by default in production; opt in only if you mean it:
+
+```bash
+export CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES=1
+```
+
 ## Run
 
 ```bash
@@ -144,6 +174,12 @@ Health check:
 
 ```bash
 curl http://127.0.0.1:8000/status
+```
+
+Operator auth status:
+
+```bash
+curl http://127.0.0.1:8000/operator/auth
 ```
 
 Start a workflow with the default agent:
@@ -217,6 +253,42 @@ curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"memory_operator","tool":"memory_query","tool_args":{"query":"retry","scope_kind":"agent","agent":"researcher","limit":3,"max_chars":400}}'
 ```
+
+Inspect a workflow from the control plane when operator auth is enabled:
+
+```bash
+curl http://127.0.0.1:8000/workflows/wf-123 \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Inspect workflow incident rollups and causality chain:
+
+```bash
+curl "http://127.0.0.1:8000/incidents/workflows/wf-123?trace_limit=20" \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Inspect the compact incident summary:
+
+```bash
+curl "http://127.0.0.1:8000/incidents/workflows/wf-123/summary?trace_limit=20" \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Queue health with operator auth:
+
+```bash
+curl http://127.0.0.1:8000/queue/health \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+## Deployment Notes
+
+- Persisted runtime state lives under `workflows/`, `jobs/`, `workers/`, `memories/`, `artifacts/`, `approvals/`, and `logs/`; treat those directories as operational data.
+- In production, set `CLARITYOS_OPERATOR_TOKEN` and terminate TLS in front of the API so operator headers are not exposed in plaintext.
+- Set `CLARITYOS_ENV=production` in deployed environments so policy validation rejects broad unsafe capability rules and surprise agent-level overrides.
+- Retention is still operator-managed in `v0.9`: use queue prune and state migration endpoints deliberately, and back up persisted state before destructive maintenance.
+- Restart and partial-failure validation now covers persisted incident summaries, workflow recovery, and safe retry resume paths; deeper soak/load testing is still future work.
 
 Request an approval-gated tool run:
 
@@ -857,6 +929,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 9. `v0.7` - memory and retrieval
 10. `v0.8` - multi-agent coordination
 11. `v0.9` - production hardening
+12. `v1.0` - release readiness and first production profile
 
 ### `v0.7` Acceptance Criteria
 
@@ -876,7 +949,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Failures in one child workflow do not silently corrupt sibling or parent workflow state.
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
-`v0.8` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v0.9` production hardening, starting with state versioning and migrations.
+`v0.9` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.0` release readiness, starting with soak/load/recovery validation and rollout defaults.
 
 ### `v0.9` Acceptance Criteria
 
@@ -886,3 +959,10 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Queue, worker, memory, and workflow subsystems expose enough observability for incident debugging.
 - System behavior under retry, reclaim, restart, and partial-failure conditions is documented and tested.
 - Production hardening includes load, soak, and recovery validation beyond the minimal unit suite.
+
+### `v1.0` Acceptance Criteria
+
+- The runtime has an explicit production profile with rollout defaults, deployment guidance, and hardened operator posture.
+- Recovery, retry, reclaim, and restart behavior are validated through repeatable load and failure drills beyond unit coverage.
+- Operators have compact incident summaries, safe maintenance flows, and a documented operational playbook.
+- Release criteria for the first real production use case are defined, measurable, and documented.

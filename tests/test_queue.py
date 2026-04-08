@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -32,6 +33,304 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(job["priority"], 50)
         loaded = queue.load_job(job["job_id"])
         self.assertEqual(loaded["job_id"], job["job_id"])
+
+    def test_create_job_persists_versioned_state_envelope(self) -> None:
+        job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+        )
+
+        with (self.job_dir / f"{job['job_id']}.json").open(encoding="utf-8") as file:
+            saved = json.load(file)
+
+        self.assertEqual(saved["schema"], "job.v1")
+        self.assertEqual(saved["version"], "v0.9")
+        self.assertEqual(saved["payload"]["job_id"], job["job_id"])
+
+    def test_job_updates_append_transition_history(self) -> None:
+        job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+        )
+
+        queue.update_job(
+            job["job_id"],
+            status="running",
+            worker_id="worker-123",
+            claimed_at="2026-01-01T00:00:00+00:00",
+            lease_expires_at="2026-01-01T00:00:30+00:00",
+            transition_reason="claimed_by_worker:worker-123",
+        )
+        loaded = queue.load_job(job["job_id"])
+        event_types = [entry["event_type"] for entry in loaded["transition_history"]]
+
+        self.assertIn("created", event_types)
+        self.assertIn("claimed", event_types)
+        self.assertEqual(loaded["transition_history"][-1]["reason"], "claimed_by_worker:worker-123")
+
+    def test_load_job_accepts_legacy_unversioned_snapshot(self) -> None:
+        legacy_job = {
+            "job_id": "legacy-job",
+            "job_type": "workflow_start",
+            "status": "queued",
+            "priority": 100,
+            "ready_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {"input": "hello", "agent": "default"},
+            "workflow_id": None,
+            "parent_job_id": None,
+            "idempotency_key": None,
+            "worker_id": None,
+            "claimed_at": None,
+            "lease_expires_at": None,
+            "reclaim_count": 0,
+            "last_requeue_reason": None,
+            "attempt_count": 0,
+            "max_attempts": 1,
+            "retry_backoff_seconds": 30,
+            "last_failure_at": None,
+            "next_retry_at": None,
+            "dead_lettered_at": None,
+            "canceled_at": None,
+            "cancel_reason": None,
+            "result": None,
+            "error": None,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "lease_expired": False,
+        }
+
+        with (self.job_dir / "legacy-job.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_job, file, indent=2)
+
+        loaded = queue.load_job("legacy-job")
+
+        self.assertEqual(loaded["job_id"], "legacy-job")
+        self.assertEqual(loaded["status"], "queued")
+
+    def test_list_jobs_supports_mixed_legacy_and_versioned_snapshots(self) -> None:
+        versioned = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "new", "agent": "default"},
+            priority=20,
+        )
+        legacy_job = {
+            "job_id": "legacy-job",
+            "job_type": "workflow_start",
+            "status": "queued",
+            "priority": 10,
+            "ready_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {"input": "legacy", "agent": "default"},
+            "workflow_id": None,
+            "parent_job_id": None,
+            "idempotency_key": "legacy-key",
+            "worker_id": None,
+            "claimed_at": None,
+            "lease_expires_at": None,
+            "reclaim_count": 0,
+            "last_requeue_reason": None,
+            "attempt_count": 0,
+            "max_attempts": 1,
+            "retry_backoff_seconds": 30,
+            "last_failure_at": None,
+            "next_retry_at": None,
+            "dead_lettered_at": None,
+            "canceled_at": None,
+            "cancel_reason": None,
+            "result": None,
+            "error": None,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "lease_expired": False,
+        }
+        with (self.job_dir / "legacy-job.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_job, file, indent=2)
+
+        jobs = queue.list_jobs(promote_due=False)
+        found = {job["job_id"] for job in jobs}
+
+        self.assertIn(versioned["job_id"], found)
+        self.assertIn("legacy-job", found)
+
+    def test_record_job_failure_rewrites_legacy_snapshot_as_versioned_state(self) -> None:
+        legacy_job = {
+            "job_id": "legacy-job",
+            "job_type": "workflow_start",
+            "status": "running",
+            "priority": 100,
+            "ready_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {"input": "legacy", "agent": "default"},
+            "workflow_id": None,
+            "parent_job_id": None,
+            "idempotency_key": None,
+            "worker_id": "worker-123",
+            "claimed_at": datetime.now(timezone.utc).isoformat(),
+            "lease_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat(),
+            "reclaim_count": 0,
+            "last_requeue_reason": None,
+            "attempt_count": 0,
+            "max_attempts": 1,
+            "retry_backoff_seconds": 30,
+            "last_failure_at": None,
+            "next_retry_at": None,
+            "dead_lettered_at": None,
+            "canceled_at": None,
+            "cancel_reason": None,
+            "result": None,
+            "error": None,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "lease_expired": False,
+        }
+        path = self.job_dir / "legacy-job.json"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(legacy_job, file, indent=2)
+
+        failed = queue.record_job_failure("legacy-job", exc=RuntimeError("boom"))
+
+        self.assertEqual(failed["status"], "failed")
+        with path.open(encoding="utf-8") as file:
+            saved = json.load(file)
+        self.assertEqual(saved["schema"], "job.v1")
+
+    def test_repair_stale_job_state_clears_claim_fields_and_promotes_due_jobs(self) -> None:
+        queued = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "queued", "agent": "default"},
+        )
+        queue.update_job(
+            queued["job_id"],
+            status="queued",
+            worker_id="worker-123",
+            claimed_at="2026-01-01T00:00:00+00:00",
+            lease_expires_at="2026-01-01T00:00:30+00:00",
+        )
+
+        scheduled = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "scheduled", "agent": "default"},
+            delay_seconds=60,
+        )
+        queue.update_job(
+            scheduled["job_id"],
+            status="scheduled",
+            ready_at=(datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat(),
+            worker_id="worker-456",
+            claimed_at="2026-01-01T00:00:00+00:00",
+            lease_expires_at="2026-01-01T00:00:30+00:00",
+        )
+
+        repaired = queue.repair_stale_job_state()
+
+        self.assertEqual(repaired["repaired_count"], 2)
+        reloaded_queued = queue.load_job(queued["job_id"])
+        self.assertEqual(reloaded_queued["status"], "queued")
+        self.assertIsNone(reloaded_queued["worker_id"])
+        self.assertIsNone(reloaded_queued["claimed_at"])
+        self.assertIsNone(reloaded_queued["lease_expires_at"])
+        reloaded_scheduled = queue.load_job(scheduled["job_id"])
+        self.assertEqual(reloaded_scheduled["status"], "queued")
+        self.assertIsNone(reloaded_scheduled["worker_id"])
+
+    def test_prune_jobs_removes_old_dead_letter_jobs_by_default(self) -> None:
+        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        dead_letter_job = {
+            "job_id": "dead-letter-job",
+            "job_type": "workflow_resume",
+            "status": "dead_letter",
+            "priority": 100,
+            "ready_at": old_timestamp,
+            "payload": {"workflow_id": "wf-123", "input": "", "agent": "default"},
+            "workflow_id": "wf-123",
+            "parent_job_id": None,
+            "idempotency_key": None,
+            "worker_id": None,
+            "claimed_at": None,
+            "lease_expires_at": None,
+            "reclaim_count": 0,
+            "last_requeue_reason": None,
+            "attempt_count": 1,
+            "max_attempts": 2,
+            "retry_backoff_seconds": 30,
+            "last_failure_at": old_timestamp,
+            "next_retry_at": None,
+            "dead_lettered_at": old_timestamp,
+            "canceled_at": None,
+            "cancel_reason": None,
+            "result": None,
+            "error": {"type": "RuntimeError", "message": "boom"},
+            "created_at": old_timestamp,
+            "updated_at": old_timestamp,
+        }
+        failed_job = {
+            **dead_letter_job,
+            "job_id": "failed-job",
+            "status": "failed",
+            "dead_lettered_at": None,
+        }
+        with (self.job_dir / "dead-letter-job.json").open("w", encoding="utf-8") as file:
+            json.dump(dead_letter_job, file, indent=2)
+        with (self.job_dir / "failed-job.json").open("w", encoding="utf-8") as file:
+            json.dump(failed_job, file, indent=2)
+
+        pruned = queue.prune_jobs(older_than_seconds=3600)
+
+        self.assertEqual(pruned["pruned_job_ids"], ["dead-letter-job"])
+        self.assertFalse((self.job_dir / "dead-letter-job.json").exists())
+        self.assertTrue((self.job_dir / "failed-job.json").exists())
+
+    def test_queue_health_summary_reports_ages_retry_backlog_and_expired_running_jobs(self) -> None:
+        queued = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "queued", "agent": "default"},
+        )
+        queue.update_job(
+            queued["job_id"],
+            created_at=(datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat(),
+        )
+
+        retry_job = queue.create_job(
+            job_type="workflow_resume",
+            payload={"workflow_id": "wf-123", "input": "", "agent": "default"},
+            workflow_id="wf-123",
+            delay_seconds=60,
+        )
+        queue.update_job(
+            retry_job["job_id"],
+            status="scheduled",
+            attempt_count=1,
+            next_retry_at=(datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat(),
+            ready_at=(datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat(),
+        )
+
+        running = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "running", "agent": "default"},
+        )
+        queue.update_job(
+            running["job_id"],
+            status="running",
+            worker_id="worker-123",
+            claimed_at=(datetime.now(timezone.utc) - timedelta(seconds=45)).isoformat(),
+            lease_expires_at=(datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat(),
+        )
+
+        health = queue.queue_health_summary()
+
+        self.assertEqual(health["health"]["retry_backlog_count"], 1)
+        self.assertEqual(health["health"]["expired_running_job_ids"], [running["job_id"]])
+        self.assertGreaterEqual(health["health"]["oldest_queued_age_seconds"], 100)
+        self.assertGreaterEqual(health["health"]["oldest_retry_age_seconds"], 20)
+        self.assertGreaterEqual(health["health"]["max_running_claim_age_seconds"], 40)
+        self.assertEqual(health["health"]["trends"]["recent_failures_last_hour"], 0)
+        self.assertEqual(health["health"]["trends"]["recent_retries_last_hour"], 1)
+        self.assertEqual(health["health"]["trends"]["reclaimed_jobs_total"], 0)
+        self.assertIn("retry_pending", [event["event_type"] for event in health["health"]["trends"]["recent_events"]])
+        self.assertGreaterEqual(health["health"]["lifecycle"]["counts"]["retry_scheduled"], 1)
+        self.assertGreaterEqual(health["health"]["lifecycle"]["counts"]["claimed"], 1)
+        self.assertIn(
+            "retry_scheduled",
+            [event["event_type"] for event in health["health"]["lifecycle"]["recent_events"]],
+        )
 
     def test_create_job_with_delay_is_scheduled(self) -> None:
         job = queue.create_job(

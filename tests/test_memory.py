@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,6 +38,102 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(loaded["payload"]["subject"], "queue")
         self.assertEqual(loaded["tags"], ["runtime", "fact"])
         self.assertEqual(memory.memory_summary(loaded)["memory_id"], saved["memory_id"])
+
+    def test_create_memory_persists_versioned_state_envelope(self) -> None:
+        saved = memory.create_memory(
+            memory_type="fact",
+            scope_kind="global",
+            payload={"statement": "The queue is durable"},
+        )
+
+        with (self.memory_dir / f"{saved['memory_id']}.json").open(encoding="utf-8") as file:
+            persisted = json.load(file)
+
+        self.assertEqual(persisted["schema"], "memory.v1")
+        self.assertEqual(persisted["version"], "v0.9")
+        self.assertEqual(persisted["payload"]["memory_id"], saved["memory_id"])
+
+    def test_load_memory_accepts_legacy_unversioned_snapshot(self) -> None:
+        legacy_memory = {
+            "memory_id": "legacy-memory",
+            "memory_type": "fact",
+            "scope": {"kind": "global", "value": None},
+            "agent": None,
+            "workflow_id": None,
+            "run_id": None,
+            "payload": {"statement": "Legacy memory"},
+            "tags": [],
+            "metadata": {},
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+
+        with (self.memory_dir / "legacy-memory.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_memory, file, indent=2)
+
+        loaded = memory.load_memory("legacy-memory")
+
+        self.assertEqual(loaded["memory_id"], "legacy-memory")
+        self.assertEqual(loaded["payload"]["statement"], "Legacy memory")
+
+    def test_list_and_query_memories_support_mixed_legacy_and_versioned_snapshots(self) -> None:
+        versioned = memory.create_memory(
+            memory_type="summary",
+            scope_kind="workflow",
+            workflow_id="wf-1",
+            payload={"text": "versioned workflow summary"},
+            tags=["keep"],
+        )
+        legacy_memory = {
+            "memory_id": "legacy-memory",
+            "memory_type": "summary",
+            "scope": {"kind": "workflow", "value": "wf-1"},
+            "agent": None,
+            "workflow_id": "wf-1",
+            "run_id": None,
+            "payload": {"text": "legacy workflow summary"},
+            "tags": ["keep"],
+            "metadata": {},
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+        with (self.memory_dir / "legacy-memory.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_memory, file, indent=2)
+
+        listed = memory.list_memories(scope_kind="workflow", workflow_id="wf-1", tags=["keep"])
+        queried = memory.query_memories(query="workflow summary", scope_kind="workflow", workflow_id="wf-1", tags=["keep"])
+
+        listed_ids = {item["memory_id"] for item in listed}
+        queried_ids = {item["memory_id"] for item in queried["results"]}
+        self.assertIn(versioned["memory_id"], listed_ids)
+        self.assertIn("legacy-memory", listed_ids)
+        self.assertIn(versioned["memory_id"], queried_ids)
+        self.assertIn("legacy-memory", queried_ids)
+
+    def test_update_memory_rewrites_legacy_snapshot_as_versioned_state(self) -> None:
+        legacy_memory = {
+            "memory_id": "legacy-memory",
+            "memory_type": "summary",
+            "scope": {"kind": "global", "value": None},
+            "agent": None,
+            "workflow_id": None,
+            "run_id": None,
+            "payload": {"text": "legacy summary"},
+            "tags": [],
+            "metadata": {},
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+        path = self.memory_dir / "legacy-memory.json"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(legacy_memory, file, indent=2)
+
+        updated = memory.update_memory("legacy-memory", payload={"text": "rewritten summary"})
+
+        self.assertEqual(updated["payload"]["text"], "rewritten summary")
+        with path.open(encoding="utf-8") as file:
+            saved = json.load(file)
+        self.assertEqual(saved["schema"], "memory.v1")
 
     def test_create_artifact_ref_memory_round_trip(self) -> None:
         saved = memory.create_memory(

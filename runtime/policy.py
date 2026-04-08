@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from fnmatch import fnmatch
+import os
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,8 @@ from runtime.errors import PolicyDeniedError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 POLICIES_CONFIG_PATH = BASE_DIR / "config" / "policies.yaml"
+PRODUCTION_ENV_VAR = "CLARITYOS_ENV"
+ALLOW_POLICY_OVERRIDES_ENV_VAR = "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES"
 CAPABILITY_CLASSES = {
     "model_call",
     "file_read",
@@ -18,6 +21,9 @@ CAPABILITY_CLASSES = {
     "memory_read",
     "memory_write",
 }
+PRODUCTION_ENV_NAMES = {"production", "prod"}
+REQUIRED_PRODUCTION_DENIES = {"file_write", "http"}
+BROAD_MATCH_PATTERNS = {"*", "**"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,108 @@ class PolicyDecision:
     matched_scope: str | None
 
 
+def runtime_environment() -> str:
+    value = os.getenv(PRODUCTION_ENV_VAR, "development")
+    if not isinstance(value, str) or not value.strip():
+        return "development"
+    return value.strip().lower()
+
+
+def production_mode_enabled() -> bool:
+    return runtime_environment() in PRODUCTION_ENV_NAMES
+
+
+def env_flag_enabled(name: str) -> bool:
+    value = os.getenv(name)
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def allow_agent_policy_overrides() -> bool:
+    return env_flag_enabled(ALLOW_POLICY_OVERRIDES_ENV_VAR)
+
+
+def normalize_rule_list(value: object, *, field_name: str) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"Policy `{field_name}` must be a list")
+
+    normalized = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Policy `{field_name}` entries must be objects")
+        normalized.append(dict(entry))
+    return normalized
+
+
+def rule_contains_broad_pattern(values: object) -> bool:
+    if not isinstance(values, list):
+        return True
+    for item in values:
+        if not isinstance(item, str) or not item.strip():
+            return True
+        if item.strip() in BROAD_MATCH_PATTERNS:
+            return True
+    return False
+
+
+def validate_rule(rule: dict, *, policy_name: str, list_name: str) -> dict:
+    capability = rule.get("capability")
+    if not isinstance(capability, str) or not capability.strip():
+        raise ValueError(f"Policy `{policy_name}` {list_name} rules require a non-empty `capability`")
+    capability = capability.strip()
+    assert_valid_capability(capability)
+
+    normalized = dict(rule)
+    normalized["capability"] = capability
+
+    if production_mode_enabled() and list_name != "deny":
+        if capability == "exec" and rule_contains_broad_pattern(normalized.get("commands")):
+            raise ValueError(
+                f"Policy `{policy_name}` {list_name} rule for `exec` must declare explicit commands in production"
+            )
+        if capability == "http" and rule_contains_broad_pattern(normalized.get("domains")):
+            raise ValueError(
+                f"Policy `{policy_name}` {list_name} rule for `http` must declare explicit domains in production"
+            )
+        if capability == "file_write" and rule_contains_broad_pattern(normalized.get("paths")):
+            raise ValueError(
+                f"Policy `{policy_name}` {list_name} rule for `file_write` must declare explicit paths in production"
+            )
+
+    return normalized
+
+
+def validate_policy_rules(policy_name: str, policy: dict) -> dict:
+    normalized = {
+        "name": policy_name,
+        "allow": [
+            validate_rule(rule, policy_name=policy_name, list_name="allow")
+            for rule in normalize_rule_list(policy.get("allow"), field_name=f"{policy_name}.allow")
+        ],
+        "approval": [
+            validate_rule(rule, policy_name=policy_name, list_name="approval")
+            for rule in normalize_rule_list(policy.get("approval"), field_name=f"{policy_name}.approval")
+        ],
+        "deny": [
+            validate_rule(rule, policy_name=policy_name, list_name="deny")
+            for rule in normalize_rule_list(policy.get("deny"), field_name=f"{policy_name}.deny")
+        ],
+    }
+
+    if production_mode_enabled():
+        denied_capabilities = {rule["capability"] for rule in normalized["deny"]}
+        missing_denies = sorted(REQUIRED_PRODUCTION_DENIES - denied_capabilities)
+        if missing_denies:
+            raise ValueError(
+                f"Policy `{policy_name}` must explicitly deny {', '.join(missing_denies)} in production"
+            )
+
+    return normalized
+
+
 def load_policies() -> dict:
     with POLICIES_CONFIG_PATH.open() as file:
         data = yaml.safe_load(file) or {}
@@ -51,12 +159,7 @@ def load_policy(name: str) -> dict:
         raise ValueError(f"Unknown policy: {name}")
 
     policy = policies[name] or {}
-    return {
-        "name": name,
-        "allow": list(policy.get("allow", []) or []),
-        "approval": list(policy.get("approval", []) or []),
-        "deny": list(policy.get("deny", []) or []),
-    }
+    return validate_policy_rules(name, policy)
 
 
 def build_agent_policy(agent_config: dict) -> dict:
@@ -65,9 +168,27 @@ def build_agent_policy(agent_config: dict) -> dict:
         raise ValueError("Agent is missing required `policy`")
 
     policy = load_policy(policy_name)
-    agent_allow = agent_config.get("allow", []) or []
-    agent_approval = agent_config.get("approval", []) or []
-    agent_deny = agent_config.get("deny", []) or []
+    agent_allow = normalize_rule_list(agent_config.get("allow"), field_name="agent.allow")
+    agent_approval = normalize_rule_list(agent_config.get("approval"), field_name="agent.approval")
+    agent_deny = normalize_rule_list(agent_config.get("deny"), field_name="agent.deny")
+    if production_mode_enabled() and not allow_agent_policy_overrides():
+        if agent_allow or agent_approval or agent_deny:
+            raise ValueError(
+                "Agent policy overrides are disabled in production; "
+                f"set `{ALLOW_POLICY_OVERRIDES_ENV_VAR}=1` to allow them explicitly"
+            )
+    agent_allow = [
+        validate_rule(rule, policy_name=policy["name"], list_name="agent.allow")
+        for rule in agent_allow
+    ]
+    agent_approval = [
+        validate_rule(rule, policy_name=policy["name"], list_name="agent.approval")
+        for rule in agent_approval
+    ]
+    agent_deny = [
+        validate_rule(rule, policy_name=policy["name"], list_name="agent.deny")
+        for rule in agent_deny
+    ]
 
     return {
         "name": policy["name"],
@@ -215,4 +336,7 @@ def snapshot_policy(policy: dict) -> dict:
         "allow": [dict(rule) for rule in policy["allow"]],
         "approval": [dict(rule) for rule in policy["approval"]],
         "deny": [dict(rule) for rule in policy["deny"]],
+        "runtime_environment": runtime_environment(),
+        "production_mode": production_mode_enabled(),
+        "agent_policy_overrides_allowed": allow_agent_policy_overrides(),
     }

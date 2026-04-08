@@ -7,6 +7,44 @@ from runtime.errors import ApprovalStateError, BudgetExceededError, DelegationDe
 
 
 class ApiTests(unittest.TestCase):
+    def test_operator_auth_status_reports_disabled_by_default(self) -> None:
+        with patch.dict(main.os.environ, {}, clear=True):
+            response = main.operator_auth()
+
+        self.assertEqual(
+            response,
+            {
+                "enabled": False,
+                "header": "X-Operator-Token",
+                "env_var": "CLARITYOS_OPERATOR_TOKEN",
+            },
+        )
+
+    @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
+    def test_operator_endpoint_requires_token_when_configured(self, _mock_queue_health_view) -> None:
+        with patch.dict(main.os.environ, {"CLARITYOS_OPERATOR_TOKEN": "secret-token"}, clear=True):
+            response = main.queue_health()
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "OperatorAuthError",
+                    "message": "Operator token is required via `X-Operator-Token`",
+                },
+            },
+        )
+
+    @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
+    def test_operator_endpoint_accepts_valid_token_when_configured(self, mock_queue_health_view) -> None:
+        with patch.dict(main.os.environ, {"CLARITYOS_OPERATOR_TOKEN": "secret-token"}, clear=True):
+            response = main.queue_health(x_operator_token="secret-token")
+
+        self.assertEqual(response["health"]["retry_backlog_count"], 1)
+        mock_queue_health_view.assert_called_once_with()
+
     @patch.object(main, "register_worker", return_value={"worker_id": "worker-123", "status": "idle"})
     def test_worker_create_passthrough(self, mock_register_worker) -> None:
         response = main.worker_create({"name": "queue-1", "lease_seconds": 45})
@@ -62,6 +100,28 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response["reclaimed_count"], 1)
         mock_reclaim_expired_leases.assert_called_once_with()
+
+    @patch.object(main, "repair_orphaned_workers", return_value={"repaired_count": 2})
+    def test_worker_repair_orphans_passthrough(self, mock_repair_orphaned_workers) -> None:
+        response = main.worker_repair_orphans({"limit": 5})
+
+        self.assertEqual(response["repaired_count"], 2)
+        mock_repair_orphaned_workers.assert_called_once_with(limit=5)
+
+    @patch.object(main, "reset_worker", return_value={"worker": {"worker_id": "worker-123", "status": "idle"}})
+    def test_worker_reset_passthrough(self, mock_reset_worker) -> None:
+        response = main.worker_reset(
+            "worker-123",
+            {"reason": "operator reset", "force": True, "requeue_running_job": False},
+        )
+
+        self.assertEqual(response["worker"]["worker_id"], "worker-123")
+        mock_reset_worker.assert_called_once_with(
+            "worker-123",
+            reason="operator reset",
+            force=True,
+            requeue_running_job=False,
+        )
 
     @patch.object(main, "create_job", return_value={"job_id": "job-123", "status": "queued"})
     def test_job_create_passthrough(self, mock_create_job) -> None:
@@ -188,12 +248,39 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["counts"]["queued"], 1)
         mock_queue_summary.assert_called_once_with()
 
+    @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
+    def test_queue_health_passthrough(self, mock_queue_health_view) -> None:
+        response = main.queue_health()
+
+        self.assertEqual(response["health"]["retry_backlog_count"], 1)
+        mock_queue_health_view.assert_called_once_with()
+
     @patch.object(main, "promote_due_jobs", return_value={"promoted_count": 1, "promoted_job_ids": ["job-123"]})
     def test_queue_promote_ready_passthrough(self, mock_promote_due_jobs) -> None:
         response = main.queue_promote_ready({"limit": 5})
 
         self.assertEqual(response["promoted_count"], 1)
         mock_promote_due_jobs.assert_called_once_with(limit=5)
+
+    @patch.object(main, "repair_stale_job_state", return_value={"repaired_count": 2})
+    def test_queue_repair_stale_passthrough(self, mock_repair_stale_job_state) -> None:
+        response = main.queue_repair_stale({"limit": 10})
+
+        self.assertEqual(response["repaired_count"], 2)
+        mock_repair_stale_job_state.assert_called_once_with(limit=10)
+
+    @patch.object(main, "prune_jobs", return_value={"pruned_count": 1, "pruned_job_ids": ["job-123"]})
+    def test_queue_prune_passthrough(self, mock_prune_jobs) -> None:
+        response = main.queue_prune(
+            {"statuses": ["dead_letter"], "older_than_seconds": 3600, "limit": 5}
+        )
+
+        self.assertEqual(response["pruned_count"], 1)
+        mock_prune_jobs.assert_called_once_with(
+            statuses=["dead_letter"],
+            older_than_seconds=3600,
+            limit=5,
+        )
 
     @patch.object(main, "start_workflow")
     def test_run_success_passthrough(self, mock_start_workflow) -> None:
@@ -343,6 +430,124 @@ class ApiTests(unittest.TestCase):
             approval_id=None,
         )
 
+    def test_state_schemas_returns_current_version_and_catalog(self) -> None:
+        response = main.state_schemas()
+
+        self.assertEqual(response["current_version"], "v0.9")
+        self.assertEqual(response["schemas"]["workflows"]["schema"], "workflow.v1")
+        self.assertEqual(response["schemas"]["jobs"]["schema"], "job.v1")
+
+    @patch.object(
+        main,
+        "inspect_state_payload",
+        return_value={
+            "schema": "workflow.v1",
+            "expected_schema": "workflow.v1",
+            "version": "v0.9",
+            "current_version": "v0.9",
+            "legacy_format": False,
+            "supported": True,
+            "payload_keys": ["workflow_id"],
+        },
+    )
+    @patch.object(main, "workflow_path")
+    def test_state_inspect_passthrough(self, mock_workflow_path, mock_inspect_state_payload) -> None:
+        mock_workflow_path.return_value = type(
+            "FakePath",
+            (),
+            {"is_file": lambda self: True},
+        )()
+
+        response = main.state_inspect("workflows", "wf-123", include_payload=True)
+
+        self.assertEqual(response["kind"], "workflows")
+        self.assertEqual(response["state_id"], "wf-123")
+        self.assertEqual(response["schema"], "workflow.v1")
+        mock_inspect_state_payload.assert_called_once()
+
+    def test_state_inspect_rejects_unknown_kind(self) -> None:
+        response = main.state_inspect("bogus", "id-123")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "ValueError",
+                    "message": "State `kind` must be one of: workflows, jobs, memories, workers, approvals, artifacts",
+                },
+            },
+        )
+
+    @patch.object(
+        main,
+        "migrate_state_payload",
+        return_value={
+            "migrated": True,
+            "before": {"legacy_format": True},
+            "after": {"legacy_format": False, "schema": "workflow.v1", "version": "v0.9"},
+        },
+    )
+    @patch.object(main, "workflow_path")
+    def test_state_migrate_passthrough(self, mock_workflow_path, mock_migrate_state_payload) -> None:
+        mock_workflow_path.return_value = type(
+            "FakePath",
+            (),
+            {"is_file": lambda self: True},
+        )()
+
+        response = main.state_migrate("workflows", "wf-123")
+
+        self.assertEqual(response["kind"], "workflows")
+        self.assertEqual(response["state_id"], "wf-123")
+        self.assertTrue(response["migrated"])
+        mock_migrate_state_payload.assert_called_once()
+
+    @patch.object(
+        main,
+        "migrate_state_directory",
+        return_value={"processed_count": 2, "migrated_count": 1, "unchanged_count": 1, "results": []},
+    )
+    def test_state_migrate_all_passthrough(self, mock_migrate_state_directory) -> None:
+        response = main.state_migrate_all("workflows", {"limit": 5, "include_unchanged": True})
+
+        self.assertEqual(response["kind"], "workflows")
+        self.assertEqual(response["processed_count"], 2)
+        mock_migrate_state_directory.assert_called_once()
+
+    @patch.object(
+        main,
+        "migrate_state_directory",
+        side_effect=[
+            {"processed_count": 2, "migrated_count": 1, "unchanged_count": 1, "results": []},
+            {"processed_count": 1, "migrated_count": 1, "unchanged_count": 0, "results": []},
+        ],
+    )
+    def test_state_migrate_runtime_passthrough(self, mock_migrate_state_directory) -> None:
+        response = main.state_migrate_runtime({"kinds": ["workflows", "jobs"], "limit_per_kind": 10})
+
+        self.assertEqual(response["kinds"], ["workflows", "jobs"])
+        self.assertEqual(response["processed_count"], 3)
+        self.assertEqual(response["migrated_count"], 2)
+        self.assertEqual(response["unchanged_count"], 1)
+        self.assertEqual(mock_migrate_state_directory.call_count, 2)
+
+    def test_state_migrate_runtime_rejects_empty_kinds(self) -> None:
+        response = main.state_migrate_runtime({"kinds": []})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "ValueError",
+                    "message": "State migration `kinds` must be a non-empty list",
+                },
+            },
+        )
+
     @patch.object(
         main,
         "get_approval",
@@ -424,12 +629,83 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["workflow_id"], "workflow-123")
         self.assertEqual(response["status"], "waiting")
 
+    @patch.object(
+        main,
+        "workflow_incident_view",
+        return_value={"workflow_id": "workflow-123", "incident": {"trace_count": 2}},
+    )
+    def test_workflow_incident_passthrough(self, mock_workflow_incident_view) -> None:
+        response = main.workflow_incident("workflow-123", trace_limit=5)
+
+        self.assertEqual(response["workflow_id"], "workflow-123")
+        self.assertEqual(response["incident"]["trace_count"], 2)
+        mock_workflow_incident_view.assert_called_once_with("workflow-123", trace_limit=5)
+
+    @patch.object(
+        main,
+        "workflow_incident_summary_view",
+        return_value={"workflow_id": "workflow-123", "incident": {"rollup": {"current_blocker": {"kind": "runtime_error"}}}},
+    )
+    def test_workflow_incident_summary_passthrough(self, mock_workflow_incident_summary_view) -> None:
+        response = main.workflow_incident_summary("workflow-123", trace_limit=5)
+
+        self.assertEqual(response["workflow_id"], "workflow-123")
+        self.assertEqual(response["incident"]["rollup"]["current_blocker"]["kind"], "runtime_error")
+        mock_workflow_incident_summary_view.assert_called_once_with("workflow-123", trace_limit=5)
+
+    @patch.object(main, "recover_workflow", return_value={"workflow_id": "workflow-123", "reclaimed_count": 1})
+    def test_workflow_recover_passthrough(self, mock_recover_workflow) -> None:
+        response = main.workflow_recover(
+            "workflow-123",
+            {
+                "reclaim_expired_jobs": True,
+                "reschedule_failed_jobs": True,
+                "reschedule_dead_letter_jobs": False,
+                "limit": 5,
+            },
+        )
+
+        self.assertEqual(response["workflow_id"], "workflow-123")
+        self.assertEqual(response["reclaimed_count"], 1)
+        mock_recover_workflow.assert_called_once_with(
+            "workflow-123",
+            reclaim_expired_jobs=True,
+            reschedule_failed_jobs=True,
+            reschedule_dead_letter_jobs=False,
+            limit=5,
+        )
+
     @patch.object(main, "resume_workflow", return_value={"status": "success"})
     def test_workflow_resume_passthrough(self, mock_resume_workflow) -> None:
         response = main.workflow_resume("workflow-123")
 
         self.assertEqual(response["status"], "success")
         mock_resume_workflow.assert_called_once_with("workflow-123")
+
+    @patch.object(main, "safe_resume_workflow", return_value={"status": "success"})
+    def test_workflow_resume_safe_passthrough(self, mock_safe_resume_workflow) -> None:
+        response = main.workflow_resume_safe("workflow-123")
+
+        self.assertEqual(response["status"], "success")
+        mock_safe_resume_workflow.assert_called_once_with("workflow-123")
+
+    @patch.object(main, "worker_health_view", return_value={"counts": {"idle": 1}})
+    def test_workers_health_passthrough(self, mock_worker_health_view) -> None:
+        response = main.workers_health()
+
+        self.assertEqual(response["counts"]["idle"], 1)
+        mock_worker_health_view.assert_called_once_with()
+
+    @patch.object(
+        main,
+        "replay_workflow",
+        return_value={"replayed_from_workflow_id": "workflow-123", "result": {"status": "success"}},
+    )
+    def test_workflow_replay_passthrough(self, mock_replay_workflow) -> None:
+        response = main.workflow_replay("workflow-123")
+
+        self.assertEqual(response["replayed_from_workflow_id"], "workflow-123")
+        mock_replay_workflow.assert_called_once_with("workflow-123")
 
     @patch.object(main, "start_child_workflow", return_value={"status": "success"})
     def test_workflow_spawn_subrun_passthrough(self, mock_start_child_workflow) -> None:

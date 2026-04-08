@@ -1,13 +1,14 @@
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from runtime.errors import ApprovalStateError
+from runtime.state import load_state_payload, write_state_payload
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 APPROVAL_DIR = BASE_DIR / "approvals"
+APPROVAL_STATE_SCHEMA = "approval.v1"
 
 TRANSITIONS = {
     "pending": {"approved", "denied", "aborted"},
@@ -33,9 +34,7 @@ def ensure_approval_dir() -> None:
 def write_approval(approval: dict) -> dict:
     ensure_approval_dir()
     path = approval_path(approval["approval_id"])
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(approval, file, indent=2)
-    return approval
+    return write_state_payload(path, approval, schema=APPROVAL_STATE_SCHEMA)
 
 
 def get_approval(approval_id: str) -> dict:
@@ -43,8 +42,7 @@ def get_approval(approval_id: str) -> dict:
     if not path.is_file():
         raise FileNotFoundError(f"Approval not found: {approval_id}")
 
-    with path.open(encoding="utf-8") as file:
-        return json.load(file)
+    return load_state_payload(path, schema=APPROVAL_STATE_SCHEMA)
 
 
 def list_approvals_for_workflow(workflow_id: str) -> list[dict]:
@@ -53,8 +51,7 @@ def list_approvals_for_workflow(workflow_id: str) -> list[dict]:
 
     approvals = []
     for path in sorted(APPROVAL_DIR.glob("*.json")):
-        with path.open(encoding="utf-8") as file:
-            approval = json.load(file)
+        approval = load_state_payload(path, schema=APPROVAL_STATE_SCHEMA)
         if approval.get("workflow_id") == workflow_id:
             approvals.append(approval)
 

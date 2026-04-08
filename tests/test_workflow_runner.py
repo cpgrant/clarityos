@@ -67,6 +67,8 @@ class WorkflowRunnerTests(unittest.TestCase):
             tool_name="echo",
             tool_args={"text": "hello"},
             approval_id=approval_record["approval_id"],
+            job_id=None,
+            worker_id=None,
         )
 
     def test_resume_completed_workflow_raises(self) -> None:
@@ -321,6 +323,8 @@ class WorkflowRunnerTests(unittest.TestCase):
             tool_name="echo",
             tool_args={"text": "hello"},
             approval_id=None,
+            job_id=None,
+            worker_id=None,
         )
 
     def test_resume_retry_waiting_workflow_before_backoff_raises(self) -> None:
@@ -348,6 +352,64 @@ class WorkflowRunnerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Workflow `wf-123` is not ready to retry until"):
             workflow_runner.resume_workflow("wf-123")
+
+    def test_safe_resume_workflow_rejects_non_waiting_workflow(self) -> None:
+        state = workflow.create_workflow_state(
+            run_id="wf-123",
+            agent="default",
+            run_type="model",
+            request={"input": "hello", "agent": "default", "tool": None, "tool_args": None},
+        )
+        workflow.write_workflow(state)
+
+        with self.assertRaisesRegex(ValueError, "is not waiting and cannot be safely resumed"):
+            workflow_runner.safe_resume_workflow("wf-123")
+
+    def test_replay_workflow_replays_failed_request_as_fresh_run(self) -> None:
+        state = workflow.create_workflow_state(
+            run_id="wf-123",
+            agent="default",
+            run_type="tool",
+            request={
+                "input": "",
+                "agent": "default",
+                "tool": "echo",
+                "tool_args": {"text": "hello"},
+            },
+        )
+        workflow.fail_workflow(state, error_type="RuntimeError", message="boom")
+        workflow.write_workflow(state)
+
+        with patch.object(
+            workflow_runner,
+            "run_agent",
+            return_value={"status": "success", "workflow": {"workflow_id": "wf-456"}},
+        ) as mock_run_agent:
+            response = workflow_runner.replay_workflow("wf-123")
+
+        self.assertEqual(response["replayed_from_workflow_id"], "wf-123")
+        self.assertEqual(response["source_status"], "failed")
+        self.assertEqual(response["result"]["workflow"]["workflow_id"], "wf-456")
+        mock_run_agent.assert_called_once_with(
+            user_input="",
+            agent_name="default",
+            tool_name="echo",
+            tool_args={"text": "hello"},
+            job_id=None,
+            worker_id=None,
+        )
+
+    def test_replay_workflow_rejects_non_failed_workflow(self) -> None:
+        state = workflow.create_workflow_state(
+            run_id="wf-123",
+            agent="default",
+            run_type="model",
+            request={"input": "hello", "agent": "default", "tool": None, "tool_args": None},
+        )
+        workflow.write_workflow(state)
+
+        with self.assertRaisesRegex(ValueError, "must be failed before it can be replayed"):
+            workflow_runner.replay_workflow("wf-123")
 
 
 if __name__ == "__main__":

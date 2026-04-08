@@ -1,13 +1,15 @@
-import json
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from runtime.state import load_state_payload, write_state_payload
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MEMORY_DIR = BASE_DIR / "memories"
+MEMORY_STATE_SCHEMA = "memory.v1"
 
 MEMORY_TYPES = {"fact", "summary", "observation", "artifact_ref"}
 MEMORY_SCOPE_KINDS = {"global", "agent", "workflow", "run"}
@@ -300,9 +302,7 @@ def memory_source_summary(
 def write_memory(memory: dict[str, Any]) -> dict[str, Any]:
     ensure_memory_dir()
     path = memory_path(memory["memory_id"])
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(memory, file, indent=2)
-    return memory
+    return write_state_payload(path, memory, schema=MEMORY_STATE_SCHEMA)
 
 
 def create_memory(
@@ -343,8 +343,7 @@ def load_memory(memory_id: str) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Memory not found: {memory_id}")
 
-    with path.open(encoding="utf-8") as file:
-        return json.load(file)
+    return load_state_payload(path, schema=MEMORY_STATE_SCHEMA)
 
 
 def update_memory(
@@ -415,8 +414,7 @@ def list_memories(
 
     memories = []
     for path in sorted(MEMORY_DIR.glob("*.json")):
-        with path.open(encoding="utf-8") as file:
-            memory = json.load(file)
+        memory = load_state_payload(path, schema=MEMORY_STATE_SCHEMA)
         if memory_matches_filters(
             memory,
             memory_type=memory_type,

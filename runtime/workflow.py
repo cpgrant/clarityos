@@ -1,9 +1,10 @@
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from runtime.policy import assert_valid_capability
+from runtime.state import load_state_payload, write_state_payload
 
 
 WORKFLOW_STEP_TYPES = {"model", "tool", "approval_wait", "retry_wait", "finish"}
@@ -27,10 +28,180 @@ STEP_STATUS_TRANSITIONS = {
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORKFLOW_DIR = BASE_DIR / "workflows"
+WORKFLOW_STATE_SCHEMA = "workflow.v1"
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_transition_history(value: object) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Workflow `transition_history` must be a list")
+
+    normalized = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ValueError("Workflow `transition_history` entries must be objects")
+        normalized.append(dict(entry))
+    return normalized
+
+
+def transition_entry(event_type: str, timestamp: str, **details: Any) -> dict[str, Any]:
+    return {
+        "event_type": event_type,
+        "timestamp": timestamp,
+        **details,
+    }
+
+
+def workflow_step_map(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        step["step_id"]: step
+        for step in snapshot.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("step_id"), str)
+    }
+
+
+def build_workflow_transition_history(
+    previous: dict[str, Any] | None,
+    current: dict[str, Any],
+) -> list[dict[str, Any]]:
+    history = normalize_transition_history(
+        previous.get("transition_history") if previous is not None else current.get("transition_history")
+    )
+    timestamp = current["updated_at"]
+
+    if previous is None:
+        history.append(
+            transition_entry(
+                "created",
+                timestamp,
+                status=current["status"],
+                current_step_id=current["current_step_id"],
+                run_id=current["run_id"],
+                latest_run_id=current["latest_run_id"],
+            )
+        )
+        return history
+
+    if previous.get("status") != current["status"]:
+        history.append(
+            transition_entry(
+                "workflow_status_changed",
+                timestamp,
+                from_status=previous.get("status"),
+                to_status=current["status"],
+            )
+        )
+
+    if previous.get("current_step_id") != current["current_step_id"]:
+        history.append(
+            transition_entry(
+                "current_step_changed",
+                timestamp,
+                from_step_id=previous.get("current_step_id"),
+                to_step_id=current["current_step_id"],
+            )
+        )
+
+    if previous.get("latest_run_id") != current["latest_run_id"]:
+        history.append(
+            transition_entry(
+                "latest_run_attached",
+                timestamp,
+                from_run_id=previous.get("latest_run_id"),
+                to_run_id=current["latest_run_id"],
+            )
+        )
+
+    previous_steps = workflow_step_map(previous)
+    current_steps = workflow_step_map(current)
+    for step_id, step in current_steps.items():
+        previous_step = previous_steps.get(step_id)
+        if previous_step is None:
+            history.append(
+                transition_entry(
+                    "step_added",
+                    timestamp,
+                    step_id=step_id,
+                    step_type=step.get("step_type"),
+                    status=step.get("status"),
+                )
+            )
+            continue
+        if previous_step.get("status") != step.get("status"):
+            history.append(
+                transition_entry(
+                    "step_status_changed",
+                    timestamp,
+                    step_id=step_id,
+                    step_type=step.get("step_type"),
+                    from_status=previous_step.get("status"),
+                    to_status=step.get("status"),
+                    error=step.get("error"),
+                )
+            )
+
+    previous_children = set(previous.get("child_workflow_ids", []))
+    for child_workflow_id in current.get("child_workflow_ids", []):
+        if child_workflow_id not in previous_children:
+            history.append(
+                transition_entry(
+                    "child_workflow_registered",
+                    timestamp,
+                    child_workflow_id=child_workflow_id,
+                )
+            )
+
+    previous_artifact_ids = {
+        artifact.get("artifact_id")
+        for artifact in previous.get("artifacts", [])
+        if isinstance(artifact, dict)
+    }
+    for artifact in current.get("artifacts", []):
+        artifact_id = artifact.get("artifact_id") if isinstance(artifact, dict) else None
+        if artifact_id is None or artifact_id in previous_artifact_ids:
+            continue
+        history.append(
+            transition_entry(
+                "artifact_registered",
+                timestamp,
+                artifact_id=artifact_id,
+                kind=artifact.get("kind"),
+            )
+        )
+
+    previous_memory_ids = {
+        memory.get("memory_id")
+        for memory in previous.get("memories", [])
+        if isinstance(memory, dict)
+    }
+    for memory in current.get("memories", []):
+        memory_id = memory.get("memory_id") if isinstance(memory, dict) else None
+        if memory_id is None or memory_id in previous_memory_ids:
+            continue
+        history.append(
+            transition_entry(
+                "memory_registered",
+                timestamp,
+                memory_id=memory_id,
+                memory_type=memory.get("memory_type"),
+            )
+        )
+
+    if previous.get("retry_state") != current.get("retry_state"):
+        history.append(
+            transition_entry(
+                "retry_state_updated",
+                timestamp,
+                retry_state=dict(current.get("retry_state", {})),
+            )
+        )
+
+    return history
 
 
 @dataclass
@@ -64,6 +235,7 @@ class WorkflowState:
     status: str
     current_step_id: str
     steps: list[WorkflowStep]
+    transition_history: list[dict[str, Any]]
     created_at: str
     updated_at: str
 
@@ -376,6 +548,7 @@ def create_workflow_state(
         status="running",
         current_step_id=action.step_id,
         steps=[action, finish],
+        transition_history=[],
         created_at=timestamp,
         updated_at=timestamp,
     )
@@ -610,6 +783,7 @@ def workflow_snapshot(workflow: WorkflowState) -> dict:
         },
         "status": workflow.status,
         "current_step_id": workflow.current_step_id,
+        "transition_history": [dict(entry) for entry in workflow.transition_history],
         "created_at": workflow.created_at,
         "updated_at": workflow.updated_at,
         "steps": [
@@ -628,11 +802,12 @@ def workflow_snapshot(workflow: WorkflowState) -> dict:
 def write_workflow(workflow: WorkflowState) -> dict:
     ensure_workflow_dir()
     workflow.updated_at = utc_now()
-    snapshot = workflow_snapshot(workflow)
     path = workflow_path(workflow.workflow_id)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(snapshot, file, indent=2)
-    return snapshot
+    previous = load_state_payload(path, schema=WORKFLOW_STATE_SCHEMA) if path.is_file() else None
+    snapshot = workflow_snapshot(workflow)
+    workflow.transition_history = build_workflow_transition_history(previous, snapshot)
+    snapshot["transition_history"] = [dict(entry) for entry in workflow.transition_history]
+    return write_state_payload(path, snapshot, schema=WORKFLOW_STATE_SCHEMA)
 
 
 def load_workflow(workflow_id: str) -> WorkflowState:
@@ -640,8 +815,7 @@ def load_workflow(workflow_id: str) -> WorkflowState:
     if not path.is_file():
         raise FileNotFoundError(f"Workflow not found: {workflow_id}")
 
-    with path.open(encoding="utf-8") as file:
-        data = json.load(file)
+    data = load_state_payload(path, schema=WORKFLOW_STATE_SCHEMA)
 
     return WorkflowState(
         workflow_id=data["workflow_id"],
@@ -666,6 +840,7 @@ def load_workflow(workflow_id: str) -> WorkflowState:
         ),
         status=data["status"],
         current_step_id=data["current_step_id"],
+        transition_history=normalize_transition_history(data.get("transition_history")),
         created_at=data.get("created_at", utc_now()),
         updated_at=data.get("updated_at", utc_now()),
         steps=[

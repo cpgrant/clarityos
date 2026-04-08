@@ -56,6 +56,8 @@ class RunState:
     run_type: str
     started_at: float
     parent_run_id: str | None = None
+    current_job_id: str | None = None
+    current_worker_id: str | None = None
     prompt: str | None = None
     model_alias: str | None = None
     model_result: dict | None = None
@@ -208,6 +210,7 @@ def trace_payload_base(
         "status": status,
         "duration_ms": duration_ms(state),
         "agent": agent_name,
+        "correlation_ids": trace_correlation_ids(state),
         "policy_snapshot": state.policy_snapshot,
         "budget": {
             "limits": state.budget_limits,
@@ -223,6 +226,78 @@ def trace_payload_base(
             "model_alias": state.model_alias,
         },
     }
+
+
+def unique_ids(values: list[str | None]) -> list[str]:
+    normalized = []
+    seen = set()
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        item = value.strip()
+        if item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+    return normalized
+
+
+def trace_correlation_ids(state: RunState) -> dict[str, object]:
+    workflow_ids = []
+    run_ids = [state.run_id, state.parent_run_id]
+    artifact_ids = []
+    memory_ids = []
+    shared_memory_ids = []
+    child_workflow_ids = []
+    delegation = {}
+
+    if state.workflow is not None:
+        workflow_ids.extend(
+            [
+                state.workflow.workflow_id,
+                state.workflow.root_workflow_id,
+                state.workflow.parent_workflow_id,
+            ]
+        )
+        run_ids.extend(
+            [
+                state.workflow.run_id,
+                state.workflow.latest_run_id,
+            ]
+        )
+        artifact_ids.extend([artifact.get("artifact_id") for artifact in state.workflow.artifacts])
+        memory_ids.extend([memory.get("memory_id") for memory in state.workflow.memories])
+        shared_memory_ids.extend([memory.get("memory_id") for memory in state.workflow.shared_memories])
+        child_workflow_ids.extend(state.workflow.child_workflow_ids)
+        delegation = {
+            "assigned_by_workflow_id": state.workflow.delegation.get("assigned_by_workflow_id"),
+            "assigned_by_run_id": state.workflow.delegation.get("assigned_by_run_id"),
+        }
+
+    approval_ids = []
+    if state.approval_record is not None:
+        approval_ids.append(state.approval_record["approval_id"])
+        workflow_ids.append(state.approval_record.get("workflow_id"))
+        run_ids.extend(
+            [
+                state.approval_record.get("requested_run_id"),
+                state.approval_record.get("resumed_run_id"),
+            ]
+        )
+
+    correlation = {
+        "run_ids": unique_ids(run_ids),
+        "workflow_ids": unique_ids(workflow_ids),
+        "job_ids": unique_ids([state.current_job_id]),
+        "worker_ids": unique_ids([state.current_worker_id]),
+        "approval_ids": unique_ids(approval_ids),
+        "artifact_ids": unique_ids(artifact_ids),
+        "memory_ids": unique_ids(memory_ids),
+        "shared_memory_ids": unique_ids(shared_memory_ids),
+        "child_workflow_ids": unique_ids(child_workflow_ids),
+        "delegation": {key: value for key, value in delegation.items() if isinstance(value, str) and value.strip()},
+    }
+    return correlation
 
 
 def approval_response(state: RunState, *, agent_name: str, tool_name: str | None, tool_args: dict | None) -> dict:
@@ -1218,6 +1293,8 @@ def run_agent(
     parent_workflow_id: str | None = None,
     root_workflow_id: str | None = None,
     workflow_depth: int = 0,
+    job_id: str | None = None,
+    worker_id: str | None = None,
     delegation: dict | None = None,
     shared_memories: list[dict] | None = None,
 ) -> dict:
@@ -1225,6 +1302,8 @@ def run_agent(
         run_id=run_id or str(uuid.uuid4()),
         run_type="tool" if tool_name is not None else "model",
         started_at=time.perf_counter(),
+        current_job_id=job_id,
+        current_worker_id=worker_id,
     )
 
     try:

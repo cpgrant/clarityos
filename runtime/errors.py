@@ -22,3 +22,9 @@ class ApprovalStateError(RuntimeError):
     def __init__(self, message: str, *, approval_id: str) -> None:
         super().__init__(message)
         self.approval_id = approval_id
+
+
+class OperatorAuthError(PermissionError):
+    def __init__(self, message: str, *, header_name: str) -> None:
+        super().__init__(message)
+        self.header_name = header_name

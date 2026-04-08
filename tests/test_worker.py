@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -34,6 +35,101 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(created["lease_seconds"], 45)
         loaded = worker.load_worker(created["worker_id"])
         self.assertEqual(loaded["worker_id"], created["worker_id"])
+
+    def test_register_worker_persists_versioned_state_envelope(self) -> None:
+        created = worker.register_worker(name="queue-1", lease_seconds=45)
+
+        with (self.worker_dir / f"{created['worker_id']}.json").open(encoding="utf-8") as file:
+            saved = json.load(file)
+
+        self.assertEqual(saved["schema"], "worker.v1")
+        self.assertEqual(saved["version"], "v0.9")
+        self.assertEqual(saved["payload"]["worker_id"], created["worker_id"])
+
+    def test_worker_updates_append_transition_history(self) -> None:
+        created = worker.register_worker(name="queue-1", lease_seconds=45)
+
+        updated = worker.update_worker(
+            created["worker_id"],
+            status="busy",
+            current_job_id="job-123",
+            transition_reason="claimed_job:job-123",
+        )
+        event_types = [entry["event_type"] for entry in updated["transition_history"]]
+
+        self.assertIn("created", event_types)
+        self.assertIn("job_assigned", event_types)
+        self.assertEqual(updated["transition_history"][-1]["reason"], "claimed_job:job-123")
+
+    def test_load_worker_accepts_legacy_unversioned_snapshot(self) -> None:
+        legacy_worker = {
+            "worker_id": "legacy-worker",
+            "name": "worker",
+            "status": "idle",
+            "lease_seconds": 30,
+            "last_heartbeat_at": "2026-01-01T00:00:00+00:00",
+            "lease_expires_at": "2026-01-01T00:00:30+00:00",
+            "lease_expired": False,
+            "current_job_id": None,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+
+        with (self.worker_dir / "legacy-worker.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_worker, file, indent=2)
+
+        loaded = worker.load_worker("legacy-worker")
+
+        self.assertEqual(loaded["worker_id"], "legacy-worker")
+        self.assertEqual(loaded["status"], "idle")
+
+    def test_list_workers_supports_mixed_legacy_and_versioned_snapshots(self) -> None:
+        versioned = worker.register_worker(name="versioned", lease_seconds=45)
+        legacy_worker = {
+            "worker_id": "legacy-worker",
+            "name": "legacy",
+            "status": "idle",
+            "lease_seconds": 30,
+            "last_heartbeat_at": "2026-01-01T00:00:00+00:00",
+            "lease_expires_at": "2026-01-01T00:00:30+00:00",
+            "lease_expired": False,
+            "current_job_id": None,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+        with (self.worker_dir / "legacy-worker.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_worker, file, indent=2)
+
+        workers = worker.list_workers()
+        found = {item["worker_id"] for item in workers}
+
+        self.assertIn(versioned["worker_id"], found)
+        self.assertIn("legacy-worker", found)
+
+    def test_update_worker_rewrites_legacy_snapshot_as_versioned_state(self) -> None:
+        timestamp = datetime.now(timezone.utc)
+        legacy_worker = {
+            "worker_id": "legacy-worker",
+            "name": "legacy",
+            "status": "idle",
+            "lease_seconds": 30,
+            "last_heartbeat_at": timestamp.isoformat(),
+            "lease_expires_at": (timestamp + timedelta(seconds=30)).isoformat(),
+            "lease_expired": False,
+            "current_job_id": None,
+            "created_at": timestamp.isoformat(),
+            "updated_at": timestamp.isoformat(),
+        }
+        path = self.worker_dir / "legacy-worker.json"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(legacy_worker, file, indent=2)
+
+        updated = worker.update_worker("legacy-worker", status="busy", current_job_id="job-123")
+
+        self.assertEqual(updated["status"], "busy")
+        with path.open(encoding="utf-8") as file:
+            saved = json.load(file)
+        self.assertEqual(saved["schema"], "worker.v1")
 
     def test_claim_next_job_assigns_highest_priority_ready_job(self) -> None:
         low = queue.create_job(
@@ -176,6 +272,124 @@ class WorkerTests(unittest.TestCase):
         reloaded_worker = worker.load_worker(registered_worker["worker_id"])
         self.assertEqual(reloaded_worker["status"], "idle")
         self.assertIsNone(reloaded_worker["current_job_id"])
+
+    def test_reset_worker_requeues_running_job_when_requested(self) -> None:
+        queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+        )
+        registered_worker = worker.register_worker()
+        claimed = worker.claim_next_job(registered_worker["worker_id"])
+
+        reset = worker.reset_worker(
+            registered_worker["worker_id"],
+            reason="operator reset",
+            requeue_running_job=True,
+        )
+
+        self.assertEqual(reset["requeued_job_ids"], [claimed["job_id"]])
+        self.assertEqual(reset["worker"]["status"], "idle")
+        self.assertIsNone(reset["worker"]["current_job_id"])
+        reloaded_job = queue.load_job(claimed["job_id"])
+        self.assertEqual(reloaded_job["status"], "queued")
+        self.assertIn("Worker reset", reloaded_job["last_requeue_reason"])
+
+    def test_reset_worker_rejects_busy_worker_without_force_or_requeue(self) -> None:
+        queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+        )
+        registered_worker = worker.register_worker()
+        worker.claim_next_job(registered_worker["worker_id"])
+
+        with self.assertRaisesRegex(ValueError, "pass `requeue_running_job` or `force` to reset"):
+            worker.reset_worker(registered_worker["worker_id"])
+
+    def test_repair_orphaned_workers_resets_missing_and_mismatched_jobs(self) -> None:
+        missing_job_worker = worker.register_worker(name="missing")
+        worker.update_worker(
+            missing_job_worker["worker_id"],
+            status="busy",
+            current_job_id="missing-job",
+        )
+
+        stale_job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "stale", "agent": "default"},
+        )
+        queue.update_job(stale_job["job_id"], status="completed")
+        stale_job_worker = worker.register_worker(name="stale")
+        worker.update_worker(
+            stale_job_worker["worker_id"],
+            status="busy",
+            current_job_id=stale_job["job_id"],
+        )
+
+        repaired = worker.repair_orphaned_workers()
+
+        self.assertEqual(repaired["repaired_count"], 2)
+        self.assertEqual(worker.load_worker(missing_job_worker["worker_id"])["status"], "idle")
+        self.assertEqual(worker.load_worker(stale_job_worker["worker_id"])["status"], "idle")
+
+    def test_worker_health_summary_reports_counts_orphans_and_expired(self) -> None:
+        idle = worker.register_worker(name="idle")
+        busy = worker.register_worker(name="busy")
+        expired = worker.register_worker(name="expired")
+        orphan = worker.register_worker(name="orphan")
+
+        running_job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "running", "agent": "default"},
+        )
+        queue.update_job(
+            running_job["job_id"],
+            status="running",
+            worker_id=busy["worker_id"],
+            claimed_at=(datetime.now(timezone.utc) - timedelta(seconds=40)).isoformat(),
+            lease_expires_at=(datetime.now(timezone.utc) + timedelta(seconds=20)).isoformat(),
+        )
+        worker.update_worker(
+            busy["worker_id"],
+            status="busy",
+            current_job_id=running_job["job_id"],
+            last_heartbeat_at=(datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat(),
+            lease_expires_at=(datetime.now(timezone.utc) + timedelta(seconds=20)).isoformat(),
+        )
+        worker.update_worker(
+            expired["worker_id"],
+            status="busy",
+            current_job_id="missing-job",
+            last_heartbeat_at=(datetime.now(timezone.utc) - timedelta(seconds=70)).isoformat(),
+            lease_expires_at=(datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat(),
+        )
+        worker.update_worker(
+            orphan["worker_id"],
+            status="busy",
+            current_job_id=None,
+        )
+
+        health = worker.worker_health_summary()
+
+        self.assertEqual(health["counts"]["idle"], 1)
+        self.assertEqual(health["counts"]["busy"], 2)
+        self.assertEqual(health["counts"]["expired"], 1)
+        self.assertIn(busy["worker_id"], health["busy_worker_ids"])
+        self.assertIn(expired["worker_id"], health["expired_worker_ids"])
+        self.assertIn(expired["worker_id"], health["orphaned_worker_ids"])
+        self.assertIn(orphan["worker_id"], health["orphaned_worker_ids"])
+        self.assertGreaterEqual(health["max_heartbeat_age_seconds"], 10)
+        self.assertIsNotNone(health["min_lease_remaining_seconds"])
+        self.assertGreaterEqual(health["trends"]["recently_updated_workers_last_hour"], 4)
+        self.assertGreaterEqual(health["trends"]["expired_workers_last_hour"], 1)
+        self.assertGreaterEqual(health["trends"]["orphaned_workers_last_hour"], 2)
+        self.assertGreaterEqual(health["trends"]["heartbeat_age_buckets"]["under_30s"], 1)
+        self.assertIn("orphaned_worker", [event["event_type"] for event in health["trends"]["recent_events"]])
+        self.assertGreaterEqual(health["lifecycle"]["counts"]["heartbeat"], 1)
+        self.assertGreaterEqual(health["lifecycle"]["counts"]["job_assigned"], 1)
+        self.assertIn(
+            "job_assigned",
+            [event["event_type"] for event in health["lifecycle"]["recent_events"]],
+        )
 
     def test_heartbeat_worker_rejects_expired_busy_worker(self) -> None:
         created_job = queue.create_job(

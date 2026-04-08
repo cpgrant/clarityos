@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,6 +82,212 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(loaded.latest_run_id, "run-456")
         self.assertEqual(loaded.status, "running")
         self.assertEqual(loaded.retry_policy["max_attempts"], 0)
+
+    def test_write_workflow_tracks_transition_history(self) -> None:
+        workflow = create_workflow_state(
+            run_id="run-123",
+            agent="default",
+            run_type="tool",
+        )
+        write_workflow(workflow)
+
+        configure_retry_policy(workflow, {"max_attempts": 1, "backoff_seconds": 0})
+        wait_for_retry(
+            workflow,
+            error_type="TimeoutError",
+            message="transient timeout",
+            retryable=True,
+        )
+        write_workflow(workflow)
+
+        loaded = load_workflow("run-123")
+        event_types = [entry["event_type"] for entry in loaded.transition_history]
+
+        self.assertIn("created", event_types)
+        self.assertIn("workflow_status_changed", event_types)
+        self.assertIn("current_step_changed", event_types)
+        self.assertIn("step_status_changed", event_types)
+        self.assertIn("retry_state_updated", event_types)
+
+    def test_write_workflow_persists_versioned_state_envelope(self) -> None:
+        workflow = create_workflow_state(
+            run_id="run-123",
+            agent="default",
+            run_type="model",
+        )
+
+        snapshot = write_workflow(workflow)
+
+        with (self.workflow_dir / "run-123.json").open(encoding="utf-8") as file:
+            saved = json.load(file)
+
+        self.assertEqual(saved["schema"], "workflow.v1")
+        self.assertEqual(saved["version"], "v0.9")
+        self.assertEqual(saved["payload"]["workflow_id"], snapshot["workflow_id"])
+
+    def test_load_workflow_accepts_legacy_unversioned_snapshot(self) -> None:
+        legacy_snapshot = {
+            "workflow_id": "legacy-123",
+            "run_id": "legacy-123",
+            "latest_run_id": "legacy-123",
+            "root_workflow_id": "legacy-123",
+            "parent_workflow_id": None,
+            "depth": 0,
+            "child_workflow_ids": [],
+            "agent": "default",
+            "run_type": "model",
+            "request": {},
+            "artifacts": [],
+            "memories": [],
+            "shared_memories": [],
+            "subrun_policy": {
+                "max_children": 0,
+                "max_depth": 0,
+                "allowed_agents": None,
+                "allowed_capabilities": None,
+                "allowed_tools": None,
+            },
+            "delegation": {},
+            "retry_policy": {"max_attempts": 0, "backoff_seconds": 0},
+            "retry_state": {
+                "attempts_used": 0,
+                "retries_remaining": 0,
+                "next_retry_at": None,
+                "last_error": None,
+            },
+            "status": "running",
+            "current_step_id": "model_step",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "steps": [
+                {
+                    "step_id": "model_step",
+                    "step_type": "model",
+                    "status": "in_progress",
+                    "details": {},
+                    "error": None,
+                },
+                {
+                    "step_id": "finish_step",
+                    "step_type": "finish",
+                    "status": "pending",
+                    "details": {},
+                    "error": None,
+                },
+            ],
+        }
+
+        with (self.workflow_dir / "legacy-123.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_snapshot, file, indent=2)
+
+        loaded = load_workflow("legacy-123")
+
+        self.assertEqual(loaded.workflow_id, "legacy-123")
+        self.assertEqual(loaded.status, "running")
+
+    def test_write_workflow_rewrites_legacy_snapshot_as_versioned_state(self) -> None:
+        legacy_snapshot = {
+            "workflow_id": "legacy-123",
+            "run_id": "legacy-123",
+            "latest_run_id": "legacy-123",
+            "root_workflow_id": "legacy-123",
+            "parent_workflow_id": None,
+            "depth": 0,
+            "child_workflow_ids": [],
+            "agent": "default",
+            "run_type": "model",
+            "request": {},
+            "artifacts": [],
+            "memories": [],
+            "shared_memories": [],
+            "subrun_policy": {"max_children": 0, "max_depth": 0, "allowed_agents": None, "allowed_capabilities": None, "allowed_tools": None},
+            "delegation": {},
+            "retry_policy": {"max_attempts": 0, "backoff_seconds": 0},
+            "retry_state": {"attempts_used": 0, "retries_remaining": 0, "next_retry_at": None, "last_error": None},
+            "status": "running",
+            "current_step_id": "model_step",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "steps": [
+                {"step_id": "model_step", "step_type": "model", "status": "in_progress", "details": {}, "error": None},
+                {"step_id": "finish_step", "step_type": "finish", "status": "pending", "details": {}, "error": None},
+            ],
+        }
+
+        path = self.workflow_dir / "legacy-123.json"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(legacy_snapshot, file, indent=2)
+
+        loaded = load_workflow("legacy-123")
+        write_workflow(loaded)
+
+        with path.open(encoding="utf-8") as file:
+            saved = json.load(file)
+
+        self.assertEqual(saved["schema"], "workflow.v1")
+        self.assertEqual(saved["version"], "v0.9")
+
+    def test_load_workflow_backfills_missing_legacy_fields(self) -> None:
+        legacy_snapshot = {
+            "workflow_id": "legacy-minimal",
+            "run_id": "legacy-minimal",
+            "agent": "default",
+            "run_type": "model",
+            "status": "running",
+            "current_step_id": "model_step",
+            "steps": [
+                {"step_id": "model_step", "step_type": "model", "status": "in_progress"},
+                {"step_id": "finish_step", "step_type": "finish", "status": "pending"},
+            ],
+        }
+
+        with (self.workflow_dir / "legacy-minimal.json").open("w", encoding="utf-8") as file:
+            json.dump(legacy_snapshot, file, indent=2)
+
+        loaded = load_workflow("legacy-minimal")
+
+        self.assertEqual(loaded.latest_run_id, "legacy-minimal")
+        self.assertEqual(loaded.root_workflow_id, "legacy-minimal")
+        self.assertEqual(loaded.depth, 0)
+        self.assertEqual(loaded.shared_memories, [])
+        self.assertEqual(loaded.retry_policy["max_attempts"], 0)
+        self.assertEqual(loaded.retry_state["retries_remaining"], 0)
+
+    def test_load_workflow_rejects_schema_mismatch(self) -> None:
+        with (self.workflow_dir / "bad-schema.json").open("w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "schema": "job.v1",
+                    "version": "v0.9",
+                    "payload": {"workflow_id": "bad-schema"},
+                },
+                file,
+                indent=2,
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Persisted state schema mismatch: expected `workflow.v1`, got `job.v1`",
+        ):
+            load_workflow("bad-schema")
+
+    def test_load_workflow_rejects_future_version(self) -> None:
+        with (self.workflow_dir / "future-version.json").open("w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "schema": "workflow.v1",
+                    "version": "v9.9",
+                    "payload": {"workflow_id": "future-version"},
+                },
+                file,
+                indent=2,
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Persisted state version `v9.9` is newer than supported version `v0.9`",
+        ):
+            load_workflow("future-version")
 
     def test_register_child_workflow_tracks_lineage(self) -> None:
         parent = create_workflow_state(

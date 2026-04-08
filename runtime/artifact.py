@@ -1,12 +1,14 @@
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from runtime.state import load_state_payload, write_state_payload
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ARTIFACT_DIR = BASE_DIR / "artifacts"
+ARTIFACT_STATE_SCHEMA = "artifact.v1"
 
 
 def utc_now() -> str:
@@ -37,9 +39,7 @@ def artifact_summary(artifact: dict[str, Any]) -> dict[str, Any]:
 def write_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
     ensure_artifact_dir()
     path = artifact_path(artifact["artifact_id"])
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(artifact, file, indent=2)
-    return artifact
+    return write_state_payload(path, artifact, schema=ARTIFACT_STATE_SCHEMA)
 
 
 def create_artifact(
@@ -71,8 +71,7 @@ def load_artifact(artifact_id: str) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Artifact not found: {artifact_id}")
 
-    with path.open(encoding="utf-8") as file:
-        return json.load(file)
+    return load_state_payload(path, schema=ARTIFACT_STATE_SCHEMA)
 
 
 def list_artifacts_for_workflow(workflow_id: str) -> list[dict[str, Any]]:
@@ -81,8 +80,7 @@ def list_artifacts_for_workflow(workflow_id: str) -> list[dict[str, Any]]:
 
     artifacts = []
     for path in sorted(ARTIFACT_DIR.glob("*.json")):
-        with path.open(encoding="utf-8") as file:
-            artifact = json.load(file)
+        artifact = load_state_payload(path, schema=ARTIFACT_STATE_SCHEMA)
         if artifact.get("workflow_id") == workflow_id:
             artifacts.append(artifact)
 

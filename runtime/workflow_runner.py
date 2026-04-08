@@ -23,6 +23,8 @@ def start_workflow(
     tool_name: str | None = None,
     tool_args: dict | None = None,
     approval_id: str | None = None,
+    job_id: str | None = None,
+    worker_id: str | None = None,
 ) -> dict:
     return run_agent(
         user_input=user_input,
@@ -30,6 +32,8 @@ def start_workflow(
         tool_name=tool_name,
         tool_args=tool_args,
         approval_id=approval_id,
+        job_id=job_id,
+        worker_id=worker_id,
     )
 
 
@@ -197,6 +201,8 @@ def start_child_workflow(
     allowed_capabilities: list[str] | None = None,
     allowed_tools: list[str] | None = None,
     shared_memory_ids: list[str] | None = None,
+    job_id: str | None = None,
+    worker_id: str | None = None,
 ) -> dict:
     parent = load_workflow(parent_workflow_id)
     if not can_spawn_child_workflow(parent):
@@ -227,6 +233,8 @@ def start_child_workflow(
             parent_workflow_id=parent.workflow_id,
             root_workflow_id=parent.root_workflow_id,
             workflow_depth=parent.depth + 1,
+            job_id=job_id,
+            worker_id=worker_id,
             delegation=delegation,
             shared_memories=shared_memories,
         )
@@ -253,7 +261,7 @@ def workflow_request(workflow_id: str) -> dict:
     raise ValueError(f"Workflow `{workflow_id}` does not have a stored request")
 
 
-def resume_workflow(workflow_id: str) -> dict:
+def resume_workflow(workflow_id: str, *, job_id: str | None = None, worker_id: str | None = None) -> dict:
     workflow = load_workflow(workflow_id)
     if workflow.status == "succeeded":
         raise ValueError(f"Workflow `{workflow_id}` has already succeeded")
@@ -277,4 +285,41 @@ def resume_workflow(workflow_id: str) -> dict:
         tool_name=request.get("tool"),
         tool_args=request.get("tool_args"),
         approval_id=approval_id,
+        job_id=job_id,
+        worker_id=worker_id,
     )
+
+
+def safe_resume_workflow(workflow_id: str, *, job_id: str | None = None, worker_id: str | None = None) -> dict:
+    workflow = load_workflow(workflow_id)
+    if workflow.status != "waiting":
+        raise ValueError(f"Workflow `{workflow_id}` is not waiting and cannot be safely resumed")
+
+    step = current_step(workflow)
+    if step.step_type not in {"approval_wait", "retry_wait"}:
+        raise ValueError(
+            f"Workflow `{workflow_id}` is waiting on unsupported step type `{step.step_type}`"
+        )
+
+    return resume_workflow(workflow_id, job_id=job_id, worker_id=worker_id)
+
+
+def replay_workflow(workflow_id: str, *, job_id: str | None = None, worker_id: str | None = None) -> dict:
+    workflow = load_workflow(workflow_id)
+    if workflow.status != "failed":
+        raise ValueError(f"Workflow `{workflow_id}` must be failed before it can be replayed")
+
+    request = workflow_request(workflow_id)
+    result = run_agent(
+        user_input=request.get("input", ""),
+        agent_name=request.get("agent", workflow.agent),
+        tool_name=request.get("tool"),
+        tool_args=request.get("tool_args"),
+        job_id=job_id,
+        worker_id=worker_id,
+    )
+    return {
+        "replayed_from_workflow_id": workflow_id,
+        "source_status": workflow.status,
+        "result": result,
+    }

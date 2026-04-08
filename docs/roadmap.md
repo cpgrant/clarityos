@@ -6,9 +6,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v0.8`
-- Next planned milestone: `v0.9`
-- Next planned slice: `v0.9` slice 1 state versioning and migrations
+- Latest completed milestone: `v0.9`
+- Next planned milestone: `v1.0`
+- Next planned slice: `v1.0` slice 1 soak, load, and recovery validation
 
 ## Milestones
 
@@ -82,17 +82,17 @@ Acceptance criteria:
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
 11. `v0.9` - production hardening
-Status: planned
+Status: completed
 
 Goal:
 Prepare the runtime for sustained production operation with recovery, governance, and operational visibility.
 
 Slices:
 
-- Slice 1: state versioning and migrations - planned
-- Slice 2: operator recovery and pruning controls - planned
-- Slice 3: observability and incident debugging - planned
-- Slice 4: auth, deployment, and resilience hardening - planned
+- Slice 1: state versioning and migrations - completed
+- Slice 2: operator recovery and pruning controls - completed
+- Slice 3: observability and incident debugging - completed
+- Slice 4: auth, deployment, and resilience hardening - completed
 
 Acceptance criteria:
 
@@ -102,3 +102,23 @@ Acceptance criteria:
 - Queue, worker, memory, and workflow subsystems expose enough observability for incident debugging.
 - System behavior under retry, reclaim, restart, and partial-failure conditions is documented and tested.
 - Production hardening includes load, soak, and recovery validation beyond the minimal unit suite.
+
+12. `v1.0` - release readiness and first production profile
+Status: planned
+
+Goal:
+Translate the hardened runtime into a repeatable, supportable production profile with explicit rollout defaults, operational playbooks, and a narrow first live use case.
+
+Slices:
+
+- Slice 1: soak, load, and recovery validation - planned
+- Slice 2: rollout defaults and deployment profile - planned
+- Slice 3: operator governance and maintenance playbooks - planned
+- Slice 4: first production path and release criteria - planned
+
+Acceptance criteria:
+
+- Soak, restart, reclaim, retry, and failure-recovery drills are repeatable and documented beyond the unit suite.
+- A production deployment profile exists with explicit env defaults, policy posture, retention guidance, and operator expectations.
+- Operators have documented playbooks for incident response, safe maintenance, migration, recovery, and pruning.
+- The first production use case is intentionally narrow, measurable, and supported by release gates rather than informal judgment.
