@@ -103,7 +103,7 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(main, "create_session", return_value={"session_id": "session-123", "status": "open"})
     def test_session_create_passthrough(self, mock_create_session) -> None:
-        response = main.session_create({"title": "Inbox", "agent": "default"})
+        response = main.session_create({"title": "Inbox", "agent": "default", "surface": "assistant_web"})
 
         self.assertEqual(response["session_id"], "session-123")
         mock_create_session.assert_called_once_with(
@@ -111,6 +111,7 @@ class ApiTests(unittest.TestCase):
             agent="default",
             metadata=None,
             memory_scope=None,
+            surface="assistant_web",
         )
 
     @patch.object(main, "assistant_html", return_value="<html><body>assistant-surface</body></html>")
@@ -135,6 +136,8 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"widget-surface", response.body)
+        self.assertEqual(response.headers["content-security-policy"], "frame-ancestors 'self';")
+        self.assertEqual(response.headers["x-frame-options"], "SAMEORIGIN")
         mock_widget_html.assert_called_once_with()
 
     def test_widget_surface_rejects_disallowed_parent_origin(self) -> None:
@@ -147,6 +150,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn(b"Widget Origin Not Allowed", response.body)
 
+    def test_widget_surface_reports_disabled_widget_when_turned_off(self) -> None:
+        with patch.dict(main.os.environ, {"CLARITYOS_WIDGET_ENABLED": "0"}, clear=True):
+            response = main.widget_surface(request_for("/widget"))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn(b"Widget Disabled", response.body)
+
     @patch.object(main, "widget_script", return_value="console.log('widget-loader');")
     def test_widget_loader_returns_javascript(self, mock_widget_script) -> None:
         response = main.widget_loader(request_for("/widget.js"))
@@ -156,6 +166,13 @@ class ApiTests(unittest.TestCase):
         self.assertIn(b"__CLARITYOS_WIDGET_CONFIG__", response.body)
         self.assertEqual(response.media_type, "application/javascript")
         mock_widget_script.assert_called_once_with()
+
+    def test_widget_loader_returns_disabled_notice_when_widget_is_off(self) -> None:
+        with patch.dict(main.os.environ, {"CLARITYOS_WIDGET_ENABLED": "false"}, clear=True):
+            response = main.widget_loader(request_for("/widget.js"))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn(b"widget is disabled", response.body.lower())
 
     def test_widget_config_reports_requested_origin_allowed(self) -> None:
         with patch.dict(
@@ -179,6 +196,24 @@ class ApiTests(unittest.TestCase):
             ["https://app.example.com", "https://admin.example.com"],
         )
 
+    def test_widget_config_reports_allowed_agents_and_launcher_profile(self) -> None:
+        with patch.dict(
+            main.os.environ,
+            {
+                "CLARITYOS_WIDGET_ALLOWED_AGENTS": "researcher,default",
+                "CLARITYOS_WIDGET_DEFAULT_AGENT": "default",
+                "CLARITYOS_WIDGET_LAUNCHER_POSITION": "left",
+                "CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN": "1",
+            },
+            clear=True,
+        ):
+            response = main.widget_config(request_for("/widget/config"))
+
+        self.assertEqual(response["allowed_agents"], ["default", "researcher"])
+        self.assertEqual(response["branding"]["default_agent"], "default")
+        self.assertEqual(response["launcher"]["position"], "left")
+        self.assertTrue(response["launcher"]["default_open"])
+
     @patch.object(main, "list_sessions", return_value=[{"session_id": "session-123"}])
     def test_session_list_passthrough(self, mock_list_sessions) -> None:
         response = main.session_list(status="open", agent="default", limit=5)
@@ -196,13 +231,47 @@ class ApiTests(unittest.TestCase):
         mock_session_snapshot.assert_called_once()
 
     @patch.object(main, "session_snapshot", return_value={"session_id": "session-123", "status": "active"})
-    @patch.object(main, "load_session", return_value=object())
-    def test_assistant_session_status_passthrough(self, mock_load_session, mock_session_snapshot) -> None:
-        response = main.assistant_session_status("session-123")
+    @patch.object(main, "require_session_or_operator_auth", return_value=object())
+    def test_assistant_session_status_passthrough(self, mock_require_session_auth, mock_session_snapshot) -> None:
+        response = main.assistant_session_status(
+            "session-123",
+            x_session_token="session-token",
+            x_operator_token=None,
+        )
 
         self.assertEqual(response["session_id"], "session-123")
-        mock_load_session.assert_called_once_with("session-123")
+        mock_require_session_auth.assert_called_once_with("session-123", "session-token", None)
         mock_session_snapshot.assert_called_once()
+
+    @patch.object(main, "load_session")
+    def test_assistant_session_status_requires_session_token_for_owned_session(self, mock_load_session) -> None:
+        mock_load_session.return_value = type(
+            "SessionStub",
+            (),
+            {
+                "session_id": "session-123",
+                "ownership": {
+                    "auth_required": True,
+                    "token_hash": "deadbeef",
+                    "surface": "assistant_web",
+                    "issued_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+        )()
+
+        response = main.assistant_session_status("session-123")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "SessionAuthError",
+                    "message": "Session token is required via `X-Session-Token`",
+                },
+            },
+        )
 
     @patch.object(main, "session_control_view", return_value={"session_id": "session-123", "workflow_rollup": {}})
     def test_session_control_passthrough(self, mock_session_control_view) -> None:
@@ -211,18 +280,40 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["session_id"], "session-123")
         mock_session_control_view.assert_called_once_with("session-123")
 
+    @patch.object(main, "archive_session", return_value={"session_id": "session-123", "status": "archived"})
+    def test_session_archive_passthrough(self, mock_archive_session) -> None:
+        response = main.session_archive("session-123", {"reason": "support cleanup"})
+
+        self.assertEqual(response["status"], "archived")
+        mock_archive_session.assert_called_once_with("session-123", reason="support cleanup")
+
+    @patch.object(main, "prune_sessions", return_value={"pruned_count": 2, "pruned_session_ids": ["a", "b"]})
+    def test_session_prune_passthrough(self, mock_prune_sessions) -> None:
+        response = main.session_prune({"statuses": ["archived"], "older_than_hours": 24, "limit": 5})
+
+        self.assertEqual(response["pruned_count"], 2)
+        mock_prune_sessions.assert_called_once_with(
+            statuses=["archived"],
+            older_than_hours=24,
+            limit=5,
+        )
+
     @patch.object(
         main,
         "append_message_to_session",
         return_value={"session": {"session_id": "session-123"}, "workflow_result": {"status": "success"}},
     )
-    def test_session_append_message_passthrough(self, mock_append_session_message) -> None:
+    @patch.object(main, "require_session_or_operator_auth", return_value=object())
+    def test_session_append_message_passthrough(self, mock_require_session_auth, mock_append_session_message) -> None:
         response = main.session_append_message(
             "session-123",
             {"input": "hello", "agent": "default"},
+            x_session_token="session-token",
+            x_operator_token=None,
         )
 
         self.assertEqual(response["session"]["session_id"], "session-123")
+        mock_require_session_auth.assert_called_once_with("session-123", "session-token", None)
         mock_append_session_message.assert_called_once_with(
             "session-123",
             content="hello",

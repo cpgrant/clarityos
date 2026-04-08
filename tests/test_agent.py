@@ -10,8 +10,11 @@ import runtime.agent as agent
 import runtime.contracts as contracts
 import runtime.memory as memory
 import runtime.policy as policy
+import runtime.queue as queue
+import runtime.session as session
 import runtime.trace as trace
 import runtime.tools as tools
+import runtime.worker as worker
 import runtime.workflow as workflow
 
 
@@ -31,6 +34,9 @@ class RunAgentTests(unittest.TestCase):
         self.approvals_dir = self.root_dir / "approvals"
         self.artifacts_dir = self.root_dir / "artifacts"
         self.memories_dir = self.root_dir / "memories"
+        self.jobs_dir = self.root_dir / "jobs"
+        self.workers_dir = self.root_dir / "workers"
+        self.sessions_dir = self.root_dir / "sessions"
         self.workflows_dir = self.root_dir / "workflows"
         self.repo_dir = self.root_dir / "repo"
         self.repo_dir.mkdir()
@@ -38,11 +44,21 @@ class RunAgentTests(unittest.TestCase):
         self.approvals_dir.mkdir()
         self.artifacts_dir.mkdir()
         self.memories_dir.mkdir()
+        self.jobs_dir.mkdir()
+        self.workers_dir.mkdir()
+        self.sessions_dir.mkdir()
         self.workflows_dir.mkdir()
         self.agents_config = self.root_dir / "agents.yaml"
         self.policies_config = self.root_dir / "policies.yaml"
         self.sample_file = self.repo_dir / "notes.txt"
         self.sample_file.write_text("sample repo file\n", encoding="utf-8")
+        self.docs_dir = self.repo_dir / "docs"
+        self.docs_dir.mkdir()
+        self.nested_file = self.docs_dir / "guide.md"
+        self.nested_file.write_text(
+            "# Guide\nClarityOS supports sessions.\nClarityOS supports workflows.\n",
+            encoding="utf-8",
+        )
         self.outside_file = self.root_dir / "outside.txt"
         self.outside_file.write_text("outside repo\n", encoding="utf-8")
         self.agents_config.write_text(
@@ -61,6 +77,13 @@ agents:
       - echo
       - get_time
       - read_file
+      - list_files
+      - read_file_range
+      - search_files
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
 
   researcher:
     system: "You provide precise, structured answers"
@@ -74,6 +97,13 @@ agents:
     tools:
       - get_time
       - read_file
+      - list_files
+      - read_file_range
+      - search_files
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
 
   memory_tool:
     system: "You manage explicit memory operations"
@@ -189,6 +219,7 @@ policies:
       - capability: file_read
         paths:
           - "**"
+      - capability: runtime_read
     deny:
       - capability: file_write
       - capability: http
@@ -213,6 +244,7 @@ policies:
       - capability: file_read
         paths:
           - "**"
+      - capability: runtime_read
     deny:
       - capability: file_write
       - capability: http
@@ -249,6 +281,9 @@ policies:
         self.approval_dir_patcher = patch.object(approval, "APPROVAL_DIR", self.approvals_dir)
         self.artifact_dir_patcher = patch.object(artifact, "ARTIFACT_DIR", self.artifacts_dir)
         self.memory_dir_patcher = patch.object(memory, "MEMORY_DIR", self.memories_dir)
+        self.job_dir_patcher = patch.object(queue, "JOB_DIR", self.jobs_dir)
+        self.worker_dir_patcher = patch.object(worker, "WORKER_DIR", self.workers_dir)
+        self.session_dir_patcher = patch.object(session, "SESSION_DIR", self.sessions_dir)
         self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflows_dir)
         self.tools_base_dir_patcher = patch.object(tools, "BASE_DIR", self.repo_dir)
         self.agents_config_patcher = patch.object(agent, "AGENTS_CONFIG_PATH", self.agents_config)
@@ -260,6 +295,9 @@ policies:
         self.approval_dir_patcher.start()
         self.artifact_dir_patcher.start()
         self.memory_dir_patcher.start()
+        self.job_dir_patcher.start()
+        self.worker_dir_patcher.start()
+        self.session_dir_patcher.start()
         self.workflow_dir_patcher.start()
         self.tools_base_dir_patcher.start()
         self.agents_config_patcher.start()
@@ -271,6 +309,9 @@ policies:
         self.approval_dir_patcher.stop()
         self.artifact_dir_patcher.stop()
         self.memory_dir_patcher.stop()
+        self.job_dir_patcher.stop()
+        self.worker_dir_patcher.stop()
+        self.session_dir_patcher.stop()
         self.workflow_dir_patcher.stop()
         self.tools_base_dir_patcher.stop()
         self.agents_config_patcher.stop()
@@ -539,6 +580,161 @@ agents:
         self.assertEqual(payload["result"]["tool"]["output"]["value"], "sample repo file\n")
         self.assertTrue(payload["result"]["tool"]["ok"])
 
+    def test_run_agent_list_files_tool_success(self) -> None:
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="list_files",
+            tool_args={"path": ".", "pattern": "*.md"},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "list_files")
+        self.assertEqual(result["tool_output"]["path"], ".")
+        self.assertIn("docs/guide.md", result["tool_output"]["files"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "list_files")
+        self.assertEqual(payload["result"]["tool"]["input"]["args"]["pattern"], "*.md")
+        self.assertIn("docs/guide.md", payload["result"]["tool"]["output"]["value"]["files"])
+
+    def test_run_agent_read_file_range_tool_success(self) -> None:
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="read_file_range",
+            tool_args={"path": "docs/guide.md", "start_line": 2, "end_line": 3},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "read_file_range")
+        self.assertEqual(result["tool_output"]["path"], "docs/guide.md")
+        self.assertEqual(result["tool_output"]["line_count"], 2)
+        self.assertIn("ClarityOS supports sessions.", result["tool_output"]["content"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "read_file_range")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["start_line"], 2)
+
+    def test_run_agent_search_files_tool_success(self) -> None:
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="search_files",
+            tool_args={"path": ".", "query": "ClarityOS", "pattern": "*.md", "limit": 5},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "search_files")
+        self.assertEqual(result["tool_output"]["query"], "ClarityOS")
+        self.assertGreaterEqual(result["tool_output"]["result_count"], 1)
+        self.assertEqual(result["tool_output"]["hits"][0]["path"], "docs/guide.md")
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "search_files")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "ClarityOS")
+
+    def test_run_agent_inspect_session_tool_success(self) -> None:
+        created = session.create_session(title="Research thread", agent="researcher")
+
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="inspect_session",
+            tool_args={"session_id": created["session_id"]},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "inspect_session")
+        self.assertEqual(result["tool_output"]["session"]["session_id"], created["session_id"])
+        self.assertEqual(result["tool_output"]["session"]["message_count"], 0)
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "inspect_session")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["session"]["session_id"], created["session_id"])
+
+    def test_run_agent_inspect_workflow_tool_success(self) -> None:
+        workflow_result = agent.run_agent(
+            "",
+            "default",
+            tool_name="read_file",
+            tool_args={"path": "notes.txt"},
+        )
+
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="inspect_workflow",
+            tool_args={"workflow_id": workflow_result["workflow"]["workflow_id"]},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "inspect_workflow")
+        self.assertEqual(
+            result["tool_output"]["workflow"]["workflow_id"],
+            workflow_result["workflow"]["workflow_id"],
+        )
+        self.assertEqual(result["tool_output"]["workflow"]["status"], "succeeded")
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "inspect_workflow")
+        self.assertEqual(
+            payload["result"]["tool"]["output"]["value"]["workflow"]["workflow_id"],
+            workflow_result["workflow"]["workflow_id"],
+        )
+
+    def test_run_agent_inspect_queue_tool_success(self) -> None:
+        created_job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+            priority=100,
+        )
+
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="inspect_queue",
+            tool_args={"limit": 5},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "inspect_queue")
+        self.assertGreaterEqual(result["tool_output"]["queue"]["total_jobs"], 1)
+        self.assertEqual(result["tool_output"]["jobs"][0]["job_id"], created_job["job_id"])
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "inspect_queue")
+        self.assertGreaterEqual(payload["result"]["tool"]["output"]["value"]["queue"]["total_jobs"], 1)
+
+    def test_run_agent_inspect_worker_tool_success(self) -> None:
+        created_worker = worker.register_worker(name="inspector", lease_seconds=45)
+
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="inspect_worker",
+            tool_args={"worker_id": created_worker["worker_id"]},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "inspect_worker")
+        self.assertEqual(result["tool_output"]["worker"]["worker_id"], created_worker["worker_id"])
+        self.assertEqual(result["tool_output"]["worker"]["name"], "inspector")
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "inspect_worker")
+        self.assertEqual(
+            payload["result"]["tool"]["output"]["value"]["worker"]["worker_id"],
+            created_worker["worker_id"],
+        )
+
     def test_run_agent_memory_write_tool_success(self) -> None:
         result = agent.run_agent(
             "",
@@ -747,6 +943,24 @@ agents:
         self.assertFalse(payload["result"]["tool"]["ok"])
         self.assertEqual(payload["result"]["tool"]["error"]["failure_type"], "not_found")
         self.assertEqual(payload["result"]["tool"]["error"]["message"], "File not found: missing.txt")
+
+    def test_run_agent_search_files_blocks_path_traversal(self) -> None:
+        with self.assertRaisesRegex(
+            PermissionError, "No allow rule matched in policy `safe_readonly` for capability `file_read`"
+        ):
+            agent.run_agent(
+                "",
+                "researcher",
+                tool_name="search_files",
+                tool_args={"path": "../outside.txt", "query": "outside"},
+            )
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["result"]["tool"]["name"], "search_files")
+        self.assertEqual(payload["result"]["tool"]["error"]["error_type"], "PolicyDeniedError")
+        self.assertFalse(payload["decision_log"][0]["allowed"])
 
     def test_run_agent_missing_logs_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown agent: missing"):
@@ -958,6 +1172,63 @@ agents:
         self.assertIsNone(result["output"])
         self.assertEqual(result["error"]["failure_type"], "not_found")
         self.assertEqual(result["error"]["error_type"], "FileNotFoundError")
+
+    def test_call_tool_lists_and_searches_repo_files(self) -> None:
+        listed = tools.call_tool("list_files", {"path": ".", "pattern": "*.md"})
+        searched = tools.call_tool("search_files", {"path": ".", "query": "ClarityOS", "pattern": "*.md"})
+        ranged = tools.call_tool("read_file_range", {"path": "docs/guide.md", "start_line": 2, "end_line": 2})
+
+        self.assertTrue(listed["ok"])
+        self.assertIn("docs/guide.md", listed["output"]["value"]["files"])
+        self.assertTrue(searched["ok"])
+        self.assertEqual(searched["output"]["value"]["hits"][0]["path"], "docs/guide.md")
+        self.assertTrue(ranged["ok"])
+        self.assertEqual(ranged["output"]["value"]["content"], "ClarityOS supports sessions.")
+
+    def test_call_tool_inspects_session_and_workflow(self) -> None:
+        created_session = session.create_session(title="Inspect me", agent="researcher")
+        workflow_result = agent.run_agent(
+            "",
+            "default",
+            tool_name="read_file",
+            tool_args={"path": "notes.txt"},
+        )
+
+        inspected_session = tools.call_tool("inspect_session", {"session_id": created_session["session_id"]})
+        inspected_workflow = tools.call_tool(
+            "inspect_workflow",
+            {"workflow_id": workflow_result["workflow"]["workflow_id"]},
+        )
+
+        self.assertTrue(inspected_session["ok"])
+        self.assertEqual(
+            inspected_session["output"]["value"]["session"]["session_id"],
+            created_session["session_id"],
+        )
+        self.assertTrue(inspected_workflow["ok"])
+        self.assertEqual(
+            inspected_workflow["output"]["value"]["workflow"]["workflow_id"],
+            workflow_result["workflow"]["workflow_id"],
+        )
+
+    def test_call_tool_inspects_queue_and_worker(self) -> None:
+        created_job = queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+            priority=100,
+        )
+        created_worker = worker.register_worker(name="watcher", lease_seconds=30)
+
+        inspected_queue = tools.call_tool("inspect_queue", {"limit": 5})
+        inspected_worker = tools.call_tool("inspect_worker", {"worker_id": created_worker["worker_id"]})
+
+        self.assertTrue(inspected_queue["ok"])
+        self.assertEqual(inspected_queue["output"]["value"]["jobs"][0]["job_id"], created_job["job_id"])
+        self.assertTrue(inspected_worker["ok"])
+        self.assertEqual(
+            inspected_worker["output"]["value"]["worker"]["worker_id"],
+            created_worker["worker_id"],
+        )
 
     def test_exception_from_tool_result_maps_failure_types(self) -> None:
         result = contracts.build_tool_failure(

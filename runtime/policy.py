@@ -19,6 +19,7 @@ CAPABILITY_CLASSES = {
     "file_write",
     "http",
     "exec",
+    "runtime_read",
     "memory_read",
     "memory_write",
 }

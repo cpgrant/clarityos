@@ -31,6 +31,8 @@
       background:
         radial-gradient(circle at top right, rgba(23, 107, 82, 0.1), transparent 32%),
         linear-gradient(180deg, #f9f4ec 0%, var(--bg) 100%);
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     .shell {
@@ -166,6 +168,8 @@
       padding: 11px 16px;
       cursor: pointer;
       transition: transform 120ms ease;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     button:hover {
@@ -232,14 +236,28 @@
   <script>
     const runtimeConfig = window.__CLARITYOS_WIDGET_CONFIG__ || {};
     const branding = runtimeConfig.branding || {};
+    const allowedAgents = Array.isArray(runtimeConfig.allowed_agents) ? runtimeConfig.allowed_agents : [];
     const params = new URLSearchParams(window.location.search);
     const widgetTitle = params.get("title") || branding.name || "ClarityOS Assistant";
-    const widgetAgent = params.get("agent") || branding.default_agent || "researcher";
+    function resolveAgent(candidate) {
+      if (!allowedAgents.length) {
+        return candidate || branding.default_agent || "researcher";
+      }
+      if (candidate && allowedAgents.includes(candidate)) {
+        return candidate;
+      }
+      if (branding.default_agent && allowedAgents.includes(branding.default_agent)) {
+        return branding.default_agent;
+      }
+      return allowedAgents[0];
+    }
+    const widgetAgent = resolveAgent(params.get("agent") || branding.default_agent || "researcher");
     const widgetSubtitle = params.get("subtitle") || branding.tagline || "A thin web gateway over the existing session runtime.";
     const widgetChannel = params.get("channel") || "embed_widget";
     const widgetAccent = params.get("accent") || branding.accent || "#176b52";
     const parentOrigin = params.get("parent_origin");
     const storageKey = `clarityos-widget-session:${widgetAgent}:${widgetTitle}`;
+    const sessionAuthHeader = "X-Session-Token";
     const pollIntervalMs = 2500;
 
     const titleEl = document.getElementById("widget-title");
@@ -253,7 +271,34 @@
     const sendButtonEl = document.getElementById("send-button");
     const newThreadEl = document.getElementById("new-thread");
 
-    let sessionId = window.localStorage.getItem(storageKey);
+    function readStoredSession() {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        return { sessionId: null, sessionToken: null };
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        return {
+          sessionId: typeof parsed.session_id === "string" ? parsed.session_id : null,
+          sessionToken: typeof parsed.session_token === "string" ? parsed.session_token : null,
+        };
+      } catch (_error) {
+        return { sessionId: raw, sessionToken: null };
+      }
+    }
+
+    function persistSessionCredentials(nextSessionId, nextSessionToken) {
+      if (!nextSessionId) {
+        window.localStorage.removeItem(storageKey);
+        return;
+      }
+      window.localStorage.setItem(storageKey, JSON.stringify({
+        session_id: nextSessionId,
+        session_token: nextSessionToken || null,
+      }));
+    }
+
+    let { sessionId, sessionToken } = readStoredSession();
     let pollTimer = null;
 
     document.documentElement.style.setProperty("--accent", widgetAccent);
@@ -314,8 +359,15 @@
     }
 
     async function fetchJson(url, options = {}) {
+      const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      };
+      if (sessionToken && (url.startsWith("/assistant/sessions/") || url.startsWith("/sessions/"))) {
+        headers[sessionAuthHeader] = sessionToken;
+      }
       const response = await fetch(url, {
-        headers: { "Content-Type": "application/json" },
+        headers,
         ...options,
       });
       const payload = await response.json();
@@ -331,6 +383,7 @@
         body: JSON.stringify({
           title: widgetTitle,
           agent: widgetAgent,
+          surface: "embed_widget",
           metadata: {
             channel: widgetChannel,
             source: "widget",
@@ -338,7 +391,8 @@
         }),
       });
       sessionId = payload.session_id;
-      window.localStorage.setItem(storageKey, sessionId);
+      sessionToken = payload.session_token || null;
+      persistSessionCredentials(sessionId, sessionToken);
       updateSession({ ...payload, messages: [] });
       setStatus("Session created.");
       return payload;
@@ -433,7 +487,8 @@
     newThreadEl.addEventListener("click", async () => {
       stopPolling();
       sessionId = null;
-      window.localStorage.removeItem(storageKey);
+      sessionToken = null;
+      persistSessionCredentials(null, null);
       renderMessages([]);
       statusEl.textContent = "idle";
       setStatus("Starting a fresh thread.");

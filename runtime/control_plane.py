@@ -41,6 +41,26 @@ def truncate_text(value: str | None, *, limit: int = 120) -> str | None:
     return value[: limit - 3].rstrip() + "..."
 
 
+def session_cleanup_summary(session) -> dict:
+    maintenance = session.metadata.get("maintenance", {}) if isinstance(session.metadata, dict) else {}
+    archive_eligible = session.status != "archived"
+    prune_eligible = session.status in {"archived", "errored", "recovered"}
+    recommendation = "keep_active"
+    if session.status == "archived":
+        recommendation = "prune_when_retention_elapsed"
+    elif session.status in {"errored", "recovered"}:
+        recommendation = "archive_before_prune"
+
+    return {
+        "surface": session.ownership.get("surface"),
+        "auth_required": bool(session.ownership.get("auth_required")),
+        "archive_eligible": archive_eligible,
+        "prune_eligible": prune_eligible,
+        "recommendation": recommendation,
+        "maintenance": dict(maintenance),
+    }
+
+
 def classify_error(error: dict | None) -> str | None:
     if error is None:
         return None
@@ -1196,6 +1216,7 @@ def session_control_view(session_id: str) -> dict:
     message_rollup = session_message_rollup(session)
     current_workflow = session_current_workflow_view(session, workflow_views)
     recent_activity = session_activity_timeline(session, current_workflow, latest_incident)
+    maintenance = session_cleanup_summary(session)
 
     return {
         **session_snapshot(session),
@@ -1215,11 +1236,14 @@ def session_control_view(session_id: str) -> dict:
         "current_workflow": current_workflow,
         "latest_incident": latest_incident,
         "continuity": continuity,
+        "maintenance": maintenance,
         "activity": {
             "recent_timeline": recent_activity,
         },
         "actions": {
             "append_message_path": f"/sessions/{session.session_id}/messages",
+            "archive_session_path": f"/sessions/{session.session_id}/archive",
+            "prune_sessions_path": "/sessions/prune",
             "current_workflow_path": (
                 f"/workflows/{session.current_workflow_id}"
                 if session.current_workflow_id is not None

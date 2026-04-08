@@ -28,3 +28,10 @@ class OperatorAuthError(PermissionError):
     def __init__(self, message: str, *, header_name: str) -> None:
         super().__init__(message)
         self.header_name = header_name
+
+
+class SessionAuthError(PermissionError):
+    def __init__(self, message: str, *, header_name: str, session_id: str) -> None:
+        super().__init__(message)
+        self.header_name = header_name
+        self.session_id = session_id

@@ -9,6 +9,7 @@ policies:
       - capability: file_read
         paths:
           - "**"
+      - capability: runtime_read
     deny:
       - capability: file_write
       - capability: http
@@ -21,6 +22,7 @@ policies:
       - capability: file_read
         paths:
           - "**"
+      - capability: runtime_read
     approval:
       - capability: exec
         commands:

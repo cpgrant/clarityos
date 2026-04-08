@@ -1,6 +1,6 @@
 # Operator Playbooks
 
-These playbooks describe the current `v1.0` trusted-runtime maintenance flows.
+These playbooks describe the current `v1.2` runtime and assistant-surface maintenance flows.
 
 Use them with:
 
@@ -12,6 +12,9 @@ Use them with:
 
 Available playbooks:
 
+- `assistant-surface-incidents.md`
+- `session-cleanup.md`
+- `widget-deployment.md`
 - `migration.md`
 - `queue-cleanup.md`
 - `worker-repair.md`

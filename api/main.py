@@ -26,6 +26,7 @@ from runtime.errors import (
     DelegationDeniedError,
     OperatorAuthError,
     PolicyDeniedError,
+    SessionAuthError,
 )
 from runtime.memory import MEMORY_DIR, MEMORY_STATE_SCHEMA, delete_memory, list_memories, load_memory, memory_path
 from runtime.model import MODELS_CONFIG_ENV_VAR, models_config_path
@@ -52,14 +53,18 @@ from runtime.queue import (
     reschedule_job,
 )
 from runtime.session import (
+    DEFAULT_SESSION_AUTH_HEADER,
     SESSION_DIR,
     SESSION_STATE_SCHEMA,
+    archive_session,
     append_session_message as append_message_to_session,
     create_session,
     list_sessions,
     load_session,
+    prune_sessions,
     session_snapshot,
     session_path,
+    verify_session_access,
 )
 from runtime.state import (
     PERSISTED_STATE_VERSION,
@@ -92,15 +97,20 @@ OPERATOR_UI_PATH = BASE_DIR / "ui" / "operator.html"
 WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
 WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
 
-app = FastAPI(title="ClarityOS", version="1.1.0")
+app = FastAPI(title="ClarityOS", version="1.2.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
+SESSION_AUTH_HEADER = DEFAULT_SESSION_AUTH_HEADER
 WIDGET_ALLOWED_ORIGINS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_ORIGINS"
+WIDGET_ENABLED_ENV_VAR = "CLARITYOS_WIDGET_ENABLED"
+WIDGET_ALLOWED_AGENTS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_AGENTS"
 WIDGET_BRAND_NAME_ENV_VAR = "CLARITYOS_WIDGET_BRAND_NAME"
 WIDGET_BRAND_TAGLINE_ENV_VAR = "CLARITYOS_WIDGET_BRAND_TAGLINE"
 WIDGET_BRAND_ACCENT_ENV_VAR = "CLARITYOS_WIDGET_BRAND_ACCENT"
 WIDGET_BRAND_AGENT_ENV_VAR = "CLARITYOS_WIDGET_DEFAULT_AGENT"
 WIDGET_LAUNCHER_LABEL_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_LABEL"
+WIDGET_LAUNCHER_POSITION_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_POSITION"
+WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN"
 
 
 @app.get("/status")
@@ -139,7 +149,7 @@ def operator_dashboard(
 def error_status_code(exc: Exception) -> int:
     if isinstance(exc, FileNotFoundError):
         return 404
-    if isinstance(exc, OperatorAuthError):
+    if isinstance(exc, (OperatorAuthError, SessionAuthError)):
         return 401
     if isinstance(exc, (DelegationDeniedError, PolicyDeniedError)):
         return 403
@@ -218,6 +228,84 @@ def widget_branding_config() -> dict[str, str]:
     }
 
 
+def env_bool(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_csv_values(raw_value: str | None) -> list[str]:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return []
+
+    values = []
+    seen = set()
+    for item in raw_value.split(","):
+        value = item.strip()
+        if not value or value in seen:
+            continue
+        values.append(value)
+        seen.add(value)
+    return values
+
+
+def widget_allowed_agents() -> list[str]:
+    configured = normalize_csv_values(os.getenv(WIDGET_ALLOWED_AGENTS_ENV_VAR))
+    default_agent = widget_branding_config()["default_agent"]
+    if not configured:
+        return [default_agent]
+    remaining = [agent for agent in configured if agent != default_agent]
+    return [default_agent, *remaining]
+
+
+def widget_launcher_config() -> dict[str, object]:
+    position = os.getenv(WIDGET_LAUNCHER_POSITION_ENV_VAR, "right").strip().lower()
+    if position not in {"left", "right"}:
+        raise ValueError(
+            f"Widget launcher position must be `left` or `right`, got `{position}`"
+        )
+    return {
+        "position": position,
+        "default_open": env_bool(WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR, default=False),
+    }
+
+
+def widget_enabled() -> bool:
+    return env_bool(WIDGET_ENABLED_ENV_VAR, default=True)
+
+
+def resolve_widget_agent(requested_agent: str | None, allowed_agents: list[str]) -> str:
+    requested = requested_agent.strip() if isinstance(requested_agent, str) else ""
+    if requested and requested in allowed_agents:
+        return requested
+    if requested and not allowed_agents:
+        return requested
+    if allowed_agents:
+        return allowed_agents[0]
+    return widget_branding_config()["default_agent"]
+
+
+def widget_frame_ancestors(allowed_origins: list[str]) -> str:
+    if "*" in allowed_origins:
+        return "*"
+    if not allowed_origins:
+        return "'self'"
+    return " ".join(allowed_origins)
+
+
+def widget_security_headers(config: dict[str, object]) -> dict[str, str]:
+    allowed_origins = config["allowed_origins"]
+    headers = {
+        "Content-Security-Policy": f"frame-ancestors {widget_frame_ancestors(allowed_origins)};",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Cache-Control": "no-store",
+    }
+    if not allowed_origins:
+        headers["X-Frame-Options"] = "SAMEORIGIN"
+    return headers
+
+
 def widget_origin_allowed(
     requested_origin: str | None,
     *,
@@ -239,9 +327,13 @@ def widget_runtime_config(
     requested_origin: str | None = None,
 ) -> dict[str, object]:
     allowed_origins = normalize_origin_list(os.getenv(WIDGET_ALLOWED_ORIGINS_ENV_VAR))
+    allowed_agents = widget_allowed_agents()
+    branding = widget_branding_config()
     return {
+        "enabled": widget_enabled(),
         "service_origin": service_origin,
         "allowed_origins": allowed_origins,
+        "allowed_agents": allowed_agents,
         "origin_restriction_enabled": True,
         "requested_origin": requested_origin,
         "requested_origin_allowed": widget_origin_allowed(
@@ -249,14 +341,22 @@ def widget_runtime_config(
             service_origin=service_origin,
             allowed_origins=allowed_origins,
         ),
-        "branding": widget_branding_config(),
+        "branding": {
+            **branding,
+            "default_agent": resolve_widget_agent(branding["default_agent"], allowed_agents),
+        },
+        "launcher": widget_launcher_config(),
         "env_vars": {
+            "enabled": WIDGET_ENABLED_ENV_VAR,
             "allowed_origins": WIDGET_ALLOWED_ORIGINS_ENV_VAR,
+            "allowed_agents": WIDGET_ALLOWED_AGENTS_ENV_VAR,
             "brand_name": WIDGET_BRAND_NAME_ENV_VAR,
             "brand_tagline": WIDGET_BRAND_TAGLINE_ENV_VAR,
             "brand_accent": WIDGET_BRAND_ACCENT_ENV_VAR,
             "default_agent": WIDGET_BRAND_AGENT_ENV_VAR,
             "launcher_label": WIDGET_LAUNCHER_LABEL_ENV_VAR,
+            "launcher_position": WIDGET_LAUNCHER_POSITION_ENV_VAR,
+            "launcher_default_open": WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR,
         },
     }
 
@@ -319,6 +419,53 @@ def widget_denied_html(config: dict[str, object]) -> str:
 </html>"""
 
 
+def widget_disabled_html(config: dict[str, object]) -> str:
+    branding = config["branding"]
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{branding['name']}</title>
+  <style>
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Georgia, "Times New Roman", serif;
+      background: linear-gradient(180deg, #f9f4ec 0%, #f3eee5 100%);
+      color: #1f1a15;
+    }}
+    article {{
+      max-width: 420px;
+      margin: 24px;
+      padding: 24px;
+      border-radius: 20px;
+      background: rgba(255, 250, 244, 0.94);
+      border: 1px solid #dfd2c0;
+      box-shadow: 0 18px 40px rgba(31, 26, 21, 0.12);
+    }}
+    h1 {{ margin: 0 0 10px; font-size: 28px; }}
+    p {{ margin: 0 0 10px; line-height: 1.5; color: #665b4d; }}
+    code {{
+      display: inline-block;
+      background: #f0e7d8;
+      border-radius: 8px;
+      padding: 2px 8px;
+    }}
+  </style>
+</head>
+<body>
+  <article>
+    <h1>Widget Disabled</h1>
+    <p>This deployment has turned off the embeddable widget surface.</p>
+    <p>Set <code>{WIDGET_ENABLED_ENV_VAR}=1</code> to re-enable it.</p>
+  </article>
+</body>
+</html>"""
+
+
 def operator_auth_enabled() -> bool:
     token = os.getenv(OPERATOR_TOKEN_ENV_VAR)
     return isinstance(token, str) and bool(token.strip())
@@ -332,6 +479,12 @@ def operator_auth_status() -> dict[str, object]:
     }
 
 
+def session_auth_status() -> dict[str, object]:
+    return {
+        "header": SESSION_AUTH_HEADER,
+    }
+
+
 def operator_profile_status() -> dict[str, object]:
     return {
         "environment": {
@@ -339,6 +492,7 @@ def operator_profile_status() -> dict[str, object]:
             "production_mode": production_mode_enabled(),
         },
         "operator_auth": operator_auth_status(),
+        "session_auth": session_auth_status(),
         "policy": {
             "allow_agent_overrides": allow_agent_policy_overrides(),
             "env_vars": {
@@ -393,12 +547,31 @@ def require_operator_auth(operator_token: str | None) -> None:
     configured = os.getenv(OPERATOR_TOKEN_ENV_VAR)
     if not isinstance(configured, str) or not configured.strip():
         return
-    candidate = operator_token if isinstance(operator_token, str) else ""
-    if not hmac.compare_digest(candidate, configured):
+    if not operator_token_matches(operator_token):
         raise OperatorAuthError(
             f"Operator token is required via `{OPERATOR_AUTH_HEADER}`",
             header_name=OPERATOR_AUTH_HEADER,
         )
+
+
+def operator_token_matches(operator_token: str | None) -> bool:
+    configured = os.getenv(OPERATOR_TOKEN_ENV_VAR)
+    if not isinstance(configured, str) or not configured.strip():
+        return False
+    candidate = operator_token.strip() if isinstance(operator_token, str) else ""
+    return hmac.compare_digest(candidate, configured)
+
+
+def require_session_or_operator_auth(
+    session_id: str,
+    session_token: str | None,
+    operator_token: str | None,
+):
+    session = load_session(session_id)
+    if operator_token_matches(operator_token):
+        return session
+    verify_session_access(session, session_token, header_name=SESSION_AUTH_HEADER)
+    return session
 
 
 @app.post("/run")
@@ -433,9 +606,12 @@ def widget_surface(
     try:
         service_origin = str(request.base_url).rstrip("/")
         config = widget_runtime_config(service_origin=service_origin, requested_origin=parent_origin)
+        headers = widget_security_headers(config)
+        if not config["enabled"]:
+            return HTMLResponse(widget_disabled_html(config), status_code=404, headers=headers)
         if parent_origin is not None and not config["requested_origin_allowed"]:
-            return HTMLResponse(widget_denied_html(config), status_code=403)
-        return HTMLResponse(render_widget_html(config))
+            return HTMLResponse(widget_denied_html(config), status_code=403, headers=headers)
+        return HTMLResponse(render_widget_html(config), headers=headers)
     except Exception as exc:
         return error_response(exc)
 
@@ -445,11 +621,18 @@ def widget_loader(request: Request):
     try:
         service_origin = str(request.base_url).rstrip("/")
         config = widget_runtime_config(service_origin=service_origin)
+        if not config["enabled"]:
+            return Response(
+                "window.console && console.warn('ClarityOS widget is disabled for this deployment.');",
+                media_type="application/javascript",
+                status_code=404,
+                headers={"Cache-Control": "no-store"},
+            )
         payload = (
             f"window.__CLARITYOS_WIDGET_CONFIG__ = {json.dumps(config)};\n"
             f"{widget_script()}"
         )
-        return Response(payload, media_type="application/javascript")
+        return Response(payload, media_type="application/javascript", headers={"Cache-Control": "no-store"})
     except Exception as exc:
         return error_response(exc)
 
@@ -491,6 +674,7 @@ def session_create(payload: dict | None = None):
             agent=body.get("agent", "default"),
             metadata=body.get("metadata"),
             memory_scope=body.get("memory_scope"),
+            surface=body.get("surface"),
         )
     except Exception as exc:
         return error_response(exc)
@@ -525,9 +709,19 @@ def session_status(
 
 
 @app.get("/assistant/sessions/{session_id}")
-def assistant_session_status(session_id: str):
+def assistant_session_status(
+    session_id: str,
+    x_session_token: str | None = Header(default=None, alias=SESSION_AUTH_HEADER),
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
     try:
-        return session_snapshot(load_session(session_id))
+        return session_snapshot(
+            require_session_or_operator_auth(
+                session_id,
+                x_session_token,
+                x_operator_token,
+            )
+        )
     except Exception as exc:
         return error_response(exc)
 
@@ -544,12 +738,46 @@ def session_control(
         return error_response(exc)
 
 
+@app.post("/sessions/{session_id}/archive")
+def session_archive(
+    session_id: str,
+    payload: dict | None = None,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        body = payload or {}
+        return archive_session(session_id, reason=body.get("reason"))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/sessions/prune")
+def session_prune(
+    payload: dict | None = None,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        body = payload or {}
+        return prune_sessions(
+            statuses=body.get("statuses"),
+            older_than_hours=body.get("older_than_hours", 168),
+            limit=body.get("limit"),
+        )
+    except Exception as exc:
+        return error_response(exc)
+
+
 @app.post("/sessions/{session_id}/messages")
 def session_append_message(
     session_id: str,
     payload: dict,
+    x_session_token: str | None = Header(default=None, alias=SESSION_AUTH_HEADER),
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
 ):
     try:
+        require_session_or_operator_auth(session_id, x_session_token, x_operator_token)
         return append_message_to_session(
             session_id,
             content=payload.get("input", ""),

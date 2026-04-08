@@ -4,15 +4,36 @@
   const origin = (script.dataset.origin || scriptUrl.origin).replace(/\/$/, "");
   const config = window.__CLARITYOS_WIDGET_CONFIG__ || {};
   const branding = config.branding || {};
+  const launcher = config.launcher || {};
+  const allowedAgents = Array.isArray(config.allowed_agents) ? config.allowed_agents : [];
   const title = script.dataset.title || branding.name || "ClarityOS Assistant";
-  const agent = script.dataset.agent || branding.default_agent || "researcher";
+  const requestedAgent = script.dataset.agent || branding.default_agent || "researcher";
   const subtitle = script.dataset.subtitle || branding.tagline || "Ask the session-backed assistant";
   const channel = script.dataset.channel || "embed_widget";
   const accent = script.dataset.accent || branding.accent || "#176b52";
   const launcherLabel = script.dataset.label || branding.launcher_label || "Ask";
-  const startOpen = script.dataset.open === "true";
+  const requestedPosition = script.dataset.position || launcher.position || "right";
+  const position = requestedPosition === "left" ? "left" : "right";
+  const requestedOpen = script.dataset.open;
+  const startOpen = requestedOpen === "true" || (requestedOpen == null && launcher.default_open === true);
   const allowedOrigins = Array.isArray(config.allowed_origins) ? config.allowed_origins : [];
   const serviceOrigin = config.service_origin || origin;
+  const enabled = config.enabled !== false;
+
+  function resolveAgent(candidate) {
+    if (!Array.isArray(allowedAgents) || allowedAgents.length === 0) {
+      return candidate || branding.default_agent || "researcher";
+    }
+    if (candidate && allowedAgents.includes(candidate)) {
+      return candidate;
+    }
+    if (branding.default_agent && allowedAgents.includes(branding.default_agent)) {
+      return branding.default_agent;
+    }
+    return allowedAgents[0];
+  }
+
+  const agent = resolveAgent(requestedAgent);
 
   function originAllowed(requestedOrigin) {
     if (!requestedOrigin) {
@@ -29,7 +50,7 @@
 
   const container = document.createElement("div");
   container.style.position = "fixed";
-  container.style.right = "20px";
+  container.style[position] = "20px";
   container.style.bottom = "20px";
   container.style.zIndex = "2147483000";
   container.style.display = "grid";
@@ -70,6 +91,17 @@
     iframe.style.display = open ? "block" : "none";
     launcher.setAttribute("aria-expanded", open ? "true" : "false");
     launcher.textContent = open ? "Close" : launcherLabel;
+  }
+
+  if (!enabled) {
+    launcher.textContent = "Offline";
+    launcher.disabled = true;
+    launcher.style.opacity = "0.72";
+    launcher.style.cursor = "not-allowed";
+    launcher.title = "This deployment has disabled the widget surface.";
+    container.appendChild(launcher);
+    document.body.appendChild(container);
+    return;
   }
 
   if (!originAllowed(window.location.origin)) {

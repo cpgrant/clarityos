@@ -6,9 +6,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.1`
-- Next planned milestone: `v1.2`
-- Next planned slice: `v1.2` slice 1 session ownership and surface auth
+- Latest completed milestone: `v1.2`
+- Current focus: `v1.3` planning
+- Next planned step: define `v1.3` scope from release experience
 
 ## Milestones
 
@@ -167,17 +167,17 @@ Chosen first adapter:
 - explicitly not Telegram, Slack, or broad multi-channel routing at this stage
 
 14. `v1.2` - assistant deployment hardening
-Status: planned
+Status: completed
 
 Goal:
 Turn the new assistant-facing surfaces into a narrowly deployable assistant profile with explicit auth, embed posture, and operator support boundaries.
 
 Slices:
 
-- Slice 1: session ownership and surface auth - planned
-- Slice 2: embed policy and branded deployment profile - planned
-- Slice 3: assistant operator playbooks and maintenance flows - planned
-- Slice 4: first assistant deployment path and release criteria - planned
+- Slice 1: session ownership and surface auth - complete
+- Slice 2: embed policy and branded deployment profile - complete
+- Slice 3: assistant operator playbooks and maintenance flows - complete
+- Slice 4: first assistant deployment path and release criteria - complete
 
 Acceptance criteria:
 
@@ -185,3 +185,19 @@ Acceptance criteria:
 - Embed origins, branding defaults, and surface configuration are documented and adjustable without code changes.
 - Operators have playbooks for assistant-surface incidents, recovery, pruning, and deployment maintenance.
 - One narrow assistant deployment path is measurable, supportable, and clearly in scope before broader surface expansion.
+
+First deployment path:
+
+- self-hosted browser-first assistant through `/assistant`
+- optional embeddable widget through `/widget` and `/widget.js`
+- explicit session ownership and operator-authenticated maintenance
+- intentionally no non-browser transport, marketplace, or hosted hub
+
+Release gates:
+
+- `scripts/run_release_validation.sh` passes
+- `python -m unittest discover -s tests -v` passes
+- assistant session token posture is explicit
+- widget deployment posture is explicit
+- operator playbooks are runnable
+- session archive/prune and workflow recovery flows are supportable

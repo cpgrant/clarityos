@@ -8,10 +8,37 @@ agents:
       max_tool_calls: 2
       max_tokens: 4000
       max_wall_clock_ms: 30000
+    subruns:
+      max_children: 3
+      max_depth: 2
+      allowed_agents:
+        - researcher
+      allowed_capabilities:
+        - model_call
+        - file_read
+        - exec
+      allowed_tools:
+        - read_file
+        - list_files
+        - read_file_range
+        - search_files
+        - inspect_session
+        - inspect_workflow
+        - inspect_queue
+        - inspect_worker
+        - echo
+        - get_time
     tools:
       - echo
       - get_time
       - read_file
+      - list_files
+      - read_file_range
+      - search_files
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
 
   researcher:
     system: "You provide precise, structured answers"
@@ -25,6 +52,13 @@ agents:
     tools:
       - get_time
       - read_file
+      - list_files
+      - read_file_range
+      - search_files
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
 
   memory_operator:
     system: "You manage explicit memory records and retrieval results"

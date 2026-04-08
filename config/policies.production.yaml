@@ -9,6 +9,7 @@ policies:
           - "config/**"
           - "runtime/**"
           - "tests/**"
+      - capability: runtime_read
     deny:
       - capability: file_write
       - capability: http

@@ -4,11 +4,11 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.1`
-- Current focus: `v1.2` assistant deployment hardening
-- Next target: `v1.2` slice 1 session ownership and surface auth
+- Current release: `v1.2`
+- Current focus: `v1.3` planning
+- Next target: define `v1.3` scope from release experience
 
-Direction after `v1.1`: `v1.2` turns the new assistant surfaces into a narrowly deployable assistant profile with explicit auth, embed posture, and operator support boundaries.
+Direction after `v1.2`: define `v1.3` from real deployment needs, prioritizing assistant quality, useful tools, and grounded behavior over channel sprawl.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -19,6 +19,8 @@ Direction after `v1.1`: `v1.2` turns the new assistant surfaces into a narrowly 
 `v1.0` completes the trusted-runtime layer with repeatable release validation drills, env-selectable production config profiles, operator playbooks, and an explicit first production path with measurable release gates.
 
 `v1.1` completes explicit persisted sessions, conversation-to-workflow mapping, session control-plane inspection, a minimal web-first assistant surface, an operator console, and a first embeddable web widget gateway on top of the trusted runtime.
+
+`v1.2` completes assistant deployment hardening: session ownership and surface auth, widget deployment policy and branding posture, operator playbooks and session maintenance flows, and an explicit first deployed assistant path with release gates.
 
 ## Historical Docs
 
@@ -32,6 +34,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v0.9.md`
 - `docs/history/v1.0.md`
 - `docs/history/v1.1.md`
+- `docs/history/v1.2.md`
 
 ## What It Does
 
@@ -205,15 +208,26 @@ export CLARITYOS_MODELS_CONFIG=config/models.yaml
 For the embeddable widget, you can narrow which sites are allowed to host it and set branding defaults without editing code:
 
 ```bash
+export CLARITYOS_WIDGET_ENABLED=1
 export CLARITYOS_WIDGET_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+export CLARITYOS_WIDGET_ALLOWED_AGENTS=researcher,default
 export CLARITYOS_WIDGET_BRAND_NAME="Site Assistant"
 export CLARITYOS_WIDGET_BRAND_TAGLINE="Ask the session-backed assistant"
 export CLARITYOS_WIDGET_BRAND_ACCENT="#176b52"
 export CLARITYOS_WIDGET_DEFAULT_AGENT=researcher
 export CLARITYOS_WIDGET_LAUNCHER_LABEL=Ask
+export CLARITYOS_WIDGET_LAUNCHER_POSITION=right
+export CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN=0
 ```
 
-If `CLARITYOS_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-origin embedding only.
+If `CLARITYOS_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-origin embedding only. The widget now also publishes deployment-oriented iframe headers, limits embed agents through `CLARITYOS_WIDGET_ALLOWED_AGENTS`, and can be disabled entirely with `CLARITYOS_WIDGET_ENABLED=0`.
+
+Assistant-facing sessions now use an explicit per-session token for browser and embed access. New sessions created through `/sessions` return a `session_token`; assistant surfaces send it back through `X-Session-Token` on `/assistant/sessions/{session_id}` and `/sessions/{session_id}/messages`. Operator routes remain separately protected by `X-Operator-Token`.
+
+Assistant-surface operators now have dedicated playbooks in [docs/playbooks/README.md](/home/cpgrant/development/codex/clarityos/docs/playbooks/README.md) for:
+- assistant-surface incidents
+- widget deployment mistakes
+- session archive and prune flows
 
 ## Run
 
@@ -267,8 +281,35 @@ Current gateway adapter scope:
 - uses an embeddable web widget rather than Telegram, Slack, or any hosted third-party transport
 - launches a floating iframe through `/widget.js` and runs the widget UI in `/widget`
 - still creates and uses persisted sessions through the existing `/sessions` flow
-- supports explicit allowed-origin controls and branding defaults through env-configured widget settings
+- supports explicit allowed-origin controls, allowed-agent policy, launcher posture, and branding defaults through env-configured widget settings
 - remains browser-only and same-runtime, so deployment stays narrow and self-hosted
+
+## First Assistant Deployment Path
+
+`v1.2` defines the first narrow deployed assistant profile:
+
+- self-hosted
+- single-tenant
+- browser-first
+- `/assistant` as the primary surface
+- `/widget` and `/widget.js` as an optional embedded surface
+- explicit session ownership and operator-authenticated maintenance
+
+What is intentionally supported:
+
+- internal assistant and research threads through persisted sessions
+- explicit browser/session auth posture
+- narrow widget deployment with allowed origins, allowed agents, and branding defaults
+- operator maintenance through session control, archive, prune, and workflow recovery
+
+What is still intentionally unsupported:
+
+- Telegram, Slack, Discord, SMS, or other non-browser transports
+- hosted hub or multi-tenant assistant operation
+- consumer-style identity and account systems
+- broad autonomous channel sprawl
+
+The full deployment-path definition and release gates live in `docs/v1.2-release-path.md`.
 
 ## Release Validation
 
@@ -336,7 +377,16 @@ http://127.0.0.1:8000/assistant
 Read back a session for the assistant browser flow:
 
 ```bash
-curl http://127.0.0.1:8000/assistant/sessions/session-123
+curl http://127.0.0.1:8000/assistant/sessions/session-123 \
+  -H "X-Session-Token: $CLARITYOS_SESSION_TOKEN"
+```
+
+Create a session and capture the returned token:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Web Assistant","agent":"researcher","surface":"assistant_web"}'
 ```
 
 Open the operator console in the browser:
@@ -414,6 +464,24 @@ curl http://127.0.0.1:8000/sessions/session-123/control \
   -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
 ```
 
+Archive an assistant-facing session:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sessions/session-123/archive \
+  -H "Content-Type: application/json" \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN" \
+  -d '{"reason":"support cleanup"}'
+```
+
+Prune old archived sessions:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sessions/prune \
+  -H "Content-Type: application/json" \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN" \
+  -d '{"statuses":["archived"],"older_than_hours":168,"limit":25}'
+```
+
 Start a workflow with the default agent:
 
 ```bash
@@ -468,6 +536,62 @@ Read a repo file with a safe tool:
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"default","tool":"read_file","tool_args":{"path":"README.md"}}'
+```
+
+List repo files with a safe tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"list_files","tool_args":{"path":".","pattern":"*.md","limit":10}}'
+```
+
+Search repo files with a safe tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityOS","pattern":"*.md","limit":10}}'
+```
+
+Read a specific file range with a safe tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"read_file_range","tool_args":{"path":"README.md","start_line":1,"end_line":12}}'
+```
+
+Inspect a session with a compact runtime tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_session","tool_args":{"session_id":"<session_id>"}}'
+```
+
+Inspect a workflow with a compact runtime tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_workflow","tool_args":{"workflow_id":"<workflow_id>"}}'
+```
+
+Inspect queue health and a compact job list:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_queue","tool_args":{"limit":5}}'
+```
+
+Inspect a worker with compact health context:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_worker","tool_args":{"worker_id":"<worker_id>"}}'
 ```
 
 Write a typed memory record explicitly:
@@ -1071,6 +1195,48 @@ curl -X POST http://127.0.0.1:8000/run \
 ```bash
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"list_files","tool_args":{"path":".","pattern":"*.md","limit":10}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityOS","pattern":"*.md","limit":10}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"read_file_range","tool_args":{"path":"README.md","start_line":1,"end_line":12}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_session","tool_args":{"session_id":"<session_id>"}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_workflow","tool_args":{"workflow_id":"<workflow_id>"}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_queue","tool_args":{"limit":5}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"inspect_worker","tool_args":{"worker_id":"<worker_id>"}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
   -d '{"agent":"memory_operator","tool":"memory_write","tool_args":{"memory_type":"fact","scope_kind":"agent","agent":"researcher","payload":{"statement":"Retries are bounded","subject":"retry"},"tags":["runtime","retry"]}}'
 ```
 
@@ -1210,7 +1376,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.1` is the current release. The next planned milestone is `v1.2`, which hardens the assistant-facing surfaces for a first narrow deployment path.
+`v1.2` is the current release. The next step is to define `v1.3` from actual deployment experience and the most valuable assistant-quality gaps.
 
 ### `v1.1` Acceptance Criteria
 
@@ -1226,3 +1392,18 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Slice 3 complete: `/operator` and `/operator/dashboard` provide a thin operator console with session activity, workflow/incident inspection, queue and worker health, and recovery actions
 - Slice 4 complete: `/widget`, `/widget.js`, and `/widget/config` provide the first thin external gateway as an embeddable web widget with origin controls and branding defaults
 - Still intentionally out of scope: Telegram, Slack, multi-channel routing, hosted transport relays, and marketplace/plugin sprawl
+
+### `v1.2` Acceptance Criteria
+
+- Assistant-facing sessions have explicit ownership and token-backed access rather than relying on shared session ids.
+- The widget has an explicit deployment posture around enable/disable state, allowed origins, allowed agents, branding defaults, and launcher behavior.
+- Operators have concrete assistant-surface playbooks for incidents, widget deployment mistakes, and session cleanup.
+- One narrow browser-first deployed assistant path is defined, supportable, and measurable before broader channel expansion.
+
+`v1.2` completion snapshot:
+
+- Slice 1 complete: assistant-facing sessions now use explicit session ownership and `X-Session-Token` rather than implicit shared access
+- Slice 2 complete: the widget now has deployable embed posture with allowed origins, allowed agents, launcher configuration, branding defaults, and fail-closed behavior
+- Slice 3 complete: operators can archive and prune sessions, and have dedicated playbooks for assistant incidents, widget deployment, and session cleanup
+- Slice 4 complete: `docs/v1.2-release-path.md` defines the first narrow deployed assistant profile and its release gates
+- Still intentionally out of scope: Telegram, Slack, hosted hub behavior, multi-tenant browser delivery, and broad channel sprawl

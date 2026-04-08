@@ -5,10 +5,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runtime.session import (
+    archive_session,
     append_session_message,
     create_session,
     list_sessions,
     load_session,
+    prune_sessions,
+    session_token_hash,
+    verify_session_access,
     write_session,
 )
 
@@ -37,6 +41,12 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(saved["version"], "v0.9")
         self.assertEqual(saved["payload"]["status"], "open")
         self.assertEqual(saved["payload"]["memory_scope"]["kind"], "agent")
+        self.assertTrue(saved["payload"]["ownership"]["auth_required"])
+        self.assertEqual(
+            saved["payload"]["ownership"]["token_hash"],
+            session_token_hash(session["session_token"]),
+        )
+        self.assertNotIn("token_hash", session["ownership"])
 
     def test_load_session_accepts_legacy_unversioned_snapshot(self) -> None:
         legacy_snapshot = {
@@ -44,6 +54,7 @@ class SessionTests(unittest.TestCase):
             "title": "Legacy",
             "agent": "default",
             "status": "open",
+            "ownership": None,
             "memory_scope": {"kind": "agent", "value": "default"},
             "current_workflow_id": None,
             "workflow_ids": [],
@@ -64,6 +75,42 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(loaded.session_id, "legacy-session")
         self.assertEqual(loaded.status, "open")
         self.assertEqual(loaded.memory_scope["value"], "default")
+        self.assertFalse(loaded.ownership["auth_required"])
+
+    def test_verify_session_access_requires_valid_owned_session_token(self) -> None:
+        session = create_session(title="Inbox", agent="default")
+        loaded = load_session(session["session_id"])
+
+        verify_session_access(loaded, session["session_token"])
+
+        with self.assertRaises(PermissionError):
+            verify_session_access(loaded, "wrong-token")
+
+    def test_archive_session_marks_session_archived_with_reason(self) -> None:
+        session = create_session(title="Inbox", agent="default")
+
+        archived = archive_session(session["session_id"], reason="support cleanup")
+        loaded = load_session(session["session_id"])
+
+        self.assertEqual(archived["status"], "archived")
+        self.assertEqual(loaded.status, "archived")
+        self.assertEqual(loaded.metadata["maintenance"]["archive_reason"], "support cleanup")
+
+    def test_prune_sessions_removes_old_archived_sessions(self) -> None:
+        session = create_session(title="Inbox", agent="default")
+        archive_session(session["session_id"], reason="cleanup")
+        path = self.session_dir / f"{session['session_id']}.json"
+        with path.open(encoding="utf-8") as file:
+            saved = json.load(file)
+        saved["payload"]["updated_at"] = "2026-01-01T00:00:00+00:00"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump(saved, file, indent=2)
+
+        result = prune_sessions(older_than_hours=1)
+
+        self.assertEqual(result["pruned_count"], 1)
+        self.assertEqual(result["pruned_session_ids"], [session["session_id"]])
+        self.assertFalse((self.session_dir / f"{session['session_id']}.json").exists())
 
     @patch("runtime.session.start_workflow")
     def test_append_session_message_tracks_workflow_and_messages(self, mock_start_workflow) -> None:

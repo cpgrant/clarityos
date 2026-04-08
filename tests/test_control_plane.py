@@ -649,6 +649,10 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(view["continuity"]["recent"][0]["memory_id"], saved_memory["memory_id"])
         self.assertFalse(view["continuity"]["message_memory_gap"])
         self.assertEqual(view["actions"]["append_message_path"], f"/sessions/{record['session_id']}/messages")
+        self.assertEqual(view["actions"]["archive_session_path"], f"/sessions/{record['session_id']}/archive")
+        self.assertEqual(view["actions"]["prune_sessions_path"], "/sessions/prune")
+        self.assertEqual(view["maintenance"]["surface"], None)
+        self.assertTrue(view["maintenance"]["archive_eligible"])
         self.assertTrue(any(event["source"] == "session" for event in view["activity"]["recent_timeline"]))
 
     def test_operator_dashboard_view_aggregates_sessions_and_runtime_health(self) -> None:
