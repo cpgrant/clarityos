@@ -4,11 +4,11 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.0`
-- Current focus: `v1.1` first assistant surface and session gateway
-- Next target: `v1.1` slice 1 session and conversation model
+- Current release: `v1.1`
+- Current focus: `v1.2` assistant deployment hardening
+- Next target: `v1.2` slice 1 session ownership and surface auth
 
-Direction after `v1.0`: `v1.1` becomes the first assistant-surface milestone, with a web-first session gateway and operator UI on top of the existing runtime.
+Direction after `v1.1`: `v1.2` turns the new assistant surfaces into a narrowly deployable assistant profile with explicit auth, embed posture, and operator support boundaries.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -17,6 +17,8 @@ Direction after `v1.0`: `v1.1` becomes the first assistant-surface milestone, wi
 `v0.9` completes state versioning and migrations, operator recovery and pruning controls, incident-correlation observability, operator auth, production policy hardening, and restart/partial-failure validation.
 
 `v1.0` completes the trusted-runtime layer with repeatable release validation drills, env-selectable production config profiles, operator playbooks, and an explicit first production path with measurable release gates.
+
+`v1.1` completes explicit persisted sessions, conversation-to-workflow mapping, session control-plane inspection, a minimal web-first assistant surface, an operator console, and a first embeddable web widget gateway on top of the trusted runtime.
 
 ## Historical Docs
 
@@ -29,6 +31,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v0.8.md`
 - `docs/history/v0.9.md`
 - `docs/history/v1.0.md`
+- `docs/history/v1.1.md`
 
 ## What It Does
 
@@ -68,6 +71,7 @@ clarityos/
 │   ├── v1.0-checklist.md
 │   ├── v1.0-release-path.md
 │   ├── v1.1-checklist.md
+│   ├── v1.2-checklist.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
@@ -76,8 +80,10 @@ clarityos/
 │       ├── v0.7.md
 │       ├── v0.8.md
 │       ├── v0.9.md
-│       └── v1.0.md
+│       ├── v1.0.md
+│       └── v1.1.md
 ├── memories/
+├── sessions/
 ├── jobs/
 ├── workers/
 ├── config/
@@ -100,6 +106,7 @@ clarityos/
 │   ├── policy.py
 │   ├── prompt_builder.py
 │   ├── queue.py
+│   ├── session.py
 │   ├── state.py
 │   ├── trace.py
 │   ├── tools.py
@@ -121,9 +128,15 @@ clarityos/
 │   ├── test_queue.py
 │   ├── test_release_validation.py
 │   ├── test_resilience.py
+│   ├── test_session.py
 │   ├── test_worker.py
 │   ├── test_workflow.py
 │   └── test_workflow_runner.py
+├── ui/
+│   ├── assistant.html
+│   ├── operator.html
+│   ├── widget.html
+│   └── widget.js
 ├── requirements.txt
 └── README.md
 ```
@@ -189,6 +202,19 @@ If you want a separate model catalog for production, you can also point the runt
 export CLARITYOS_MODELS_CONFIG=config/models.yaml
 ```
 
+For the embeddable widget, you can narrow which sites are allowed to host it and set branding defaults without editing code:
+
+```bash
+export CLARITYOS_WIDGET_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+export CLARITYOS_WIDGET_BRAND_NAME="Site Assistant"
+export CLARITYOS_WIDGET_BRAND_TAGLINE="Ask the session-backed assistant"
+export CLARITYOS_WIDGET_BRAND_ACCENT="#176b52"
+export CLARITYOS_WIDGET_DEFAULT_AGENT=researcher
+export CLARITYOS_WIDGET_LAUNCHER_LABEL=Ask
+```
+
+If `CLARITYOS_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-origin embedding only.
+
 ## Run
 
 ```bash
@@ -201,6 +227,48 @@ API base URL:
 ```text
 http://127.0.0.1:8000
 ```
+
+Minimal assistant surface:
+
+```text
+http://127.0.0.1:8000/assistant
+```
+
+Operator console:
+
+```text
+http://127.0.0.1:8000/operator
+```
+
+Embeddable widget frame:
+
+```text
+http://127.0.0.1:8000/widget
+```
+
+Current `v1.1` assistant surface scope:
+
+- web-first and single-browser-session oriented
+- creates or reloads a persisted session automatically
+- sends messages through `POST /sessions/{session_id}/messages`
+- refreshes/polls state through `GET /assistant/sessions/{session_id}`
+- keeps operator-only control and recovery views behind the existing operator-authenticated endpoints
+- does not yet include a multi-user auth layer or any external channels
+
+Current operator console scope:
+
+- reads sessions, queue health, worker health, and selected session control data from the existing operator endpoints
+- prompts for the operator token only when `CLARITYOS_OPERATOR_TOKEN` is configured
+- surfaces current workflow recovery actions through the browser for safe resume, replay, and recover flows
+- remains a thin control-plane client rather than a second execution or policy layer
+
+Current gateway adapter scope:
+
+- uses an embeddable web widget rather than Telegram, Slack, or any hosted third-party transport
+- launches a floating iframe through `/widget.js` and runs the widget UI in `/widget`
+- still creates and uses persisted sessions through the existing `/sessions` flow
+- supports explicit allowed-origin controls and branding defaults through env-configured widget settings
+- remains browser-only and same-runtime, so deployment stays narrow and self-hosted
 
 ## Release Validation
 
@@ -243,6 +311,89 @@ Health check:
 curl http://127.0.0.1:8000/status
 ```
 
+Create a session:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Research thread","agent":"researcher"}'
+```
+
+Append a user message to a session:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sessions/session-123/messages \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Summarize the latest workflow state","agent":"researcher"}'
+```
+
+Open the web-first assistant surface:
+
+```text
+http://127.0.0.1:8000/assistant
+```
+
+Read back a session for the assistant browser flow:
+
+```bash
+curl http://127.0.0.1:8000/assistant/sessions/session-123
+```
+
+Open the operator console in the browser:
+
+```text
+http://127.0.0.1:8000/operator
+```
+
+The console uses the existing protected endpoints underneath. If operator auth is enabled, paste the same `CLARITYOS_OPERATOR_TOKEN` value into the browser console prompt field.
+
+Load the compact operator dashboard payload directly:
+
+```bash
+curl http://127.0.0.1:8000/operator/dashboard \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Behind the UI, the operator console reads and acts through:
+
+```bash
+curl http://127.0.0.1:8000/sessions \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+```bash
+curl http://127.0.0.1:8000/queue/health \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+```bash
+curl http://127.0.0.1:8000/workers/health \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Embed the widget on another page:
+
+```html
+<script
+  src="http://127.0.0.1:8000/widget.js"
+  data-title="Site Assistant"
+  data-agent="researcher"
+  data-label="Ask"
+></script>
+```
+
+Direct widget frame URL:
+
+```text
+http://127.0.0.1:8000/widget?title=Site%20Assistant&agent=researcher
+```
+
+Inspect widget runtime config and allowed-origin posture:
+
+```bash
+curl "http://127.0.0.1:8000/widget/config?origin=https://app.example.com"
+```
+
 Operator auth status:
 
 ```bash
@@ -253,6 +404,13 @@ Operator runtime profile:
 
 ```bash
 curl http://127.0.0.1:8000/operator/profile \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Inspect a session and its related workflow rollups:
+
+```bash
+curl http://127.0.0.1:8000/sessions/session-123/control \
   -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
 ```
 
@@ -1027,7 +1185,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Failures in one child workflow do not silently corrupt sibling or parent workflow state.
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
-`v1.0` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.1` first assistant surface and session gateway, starting with the session and conversation model.
+`v1.1` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.2` assistant deployment hardening, which turns the new assistant surfaces into a narrower deployable profile.
 
 ### `v0.9` Acceptance Criteria
 
@@ -1052,7 +1210,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.0` is the current release. The next planned milestone is `v1.1`, which adds the first user-facing assistant surface on top of this trusted-runtime core.
+`v1.1` is the current release. The next planned milestone is `v1.2`, which hardens the assistant-facing surfaces for a first narrow deployment path.
 
 ### `v1.1` Acceptance Criteria
 
@@ -1060,3 +1218,11 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - A first assistant surface exists, ideally web-first, that uses the existing runtime instead of introducing a second execution path.
 - Operators can inspect live conversations, related workflows, and recovery actions through a simple UI.
 - Any first channel adapter remains thin and transport-focused, with workflow, queue, memory, and recovery behavior still owned by the runtime core.
+
+`v1.1` completion snapshot:
+
+- Slice 1 complete: persisted sessions, `/sessions` endpoints, session-to-workflow mapping, and session control-plane summaries
+- Slice 2 complete: `/assistant` and `/assistant/sessions/{session_id}` provide a thin browser surface over the existing session runtime
+- Slice 3 complete: `/operator` and `/operator/dashboard` provide a thin operator console with session activity, workflow/incident inspection, queue and worker health, and recovery actions
+- Slice 4 complete: `/widget`, `/widget.js`, and `/widget/config` provide the first thin external gateway as an embeddable web widget with origin controls and branding defaults
+- Still intentionally out of scope: Telegram, Slack, multi-channel routing, hosted transport relays, and marketplace/plugin sprawl

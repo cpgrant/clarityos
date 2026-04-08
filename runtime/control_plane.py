@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 
 from runtime.approval import approval_summary, list_approvals_for_workflow
 from runtime.artifact import artifact_summary, list_artifacts_for_workflow
-from runtime.memory import memory_summary
+from runtime.memory import list_memories, memory_summary
 from runtime.queue import job_lease_expired, list_jobs, queue_health_summary, requeue_job, reschedule_job
+from runtime.session import list_sessions, load_session, session_snapshot
 from runtime.trace import list_traces, trace_timeline
 from runtime.worker import load_worker, update_worker, worker_health_summary
 from runtime.workflow import can_spawn_child_workflow, current_step, load_workflow, workflow_snapshot
@@ -30,6 +31,14 @@ def unique_ids(values: list[str | None]) -> list[str]:
         normalized.append(item)
         seen.add(item)
     return normalized
+
+
+def truncate_text(value: str | None, *, limit: int = 120) -> str | None:
+    if value is None:
+        return None
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
 
 
 def classify_error(error: dict | None) -> str | None:
@@ -964,3 +973,262 @@ def queue_health_view() -> dict:
 
 def worker_health_view() -> dict:
     return worker_health_summary()
+
+
+def load_related_workflows_for_session(session) -> tuple[list, list[str]]:
+    workflows = []
+    missing = []
+    for workflow_id in session.workflow_ids:
+        try:
+            workflows.append(load_workflow(workflow_id))
+        except FileNotFoundError:
+            missing.append(workflow_id)
+    workflows.sort(key=lambda workflow: workflow.updated_at, reverse=True)
+    return workflows, missing
+
+
+def session_memory_continuity(session, *, limit: int = 10) -> dict:
+    scope = dict(session.memory_scope)
+    scope_kind = scope["kind"]
+    scope_value = scope.get("value")
+    continuity = {
+        "scope": scope,
+        "recent": [],
+        "workflow_recent": [],
+        "message_memory_gap": len(session.messages) == 0,
+    }
+
+    if scope_kind == "global":
+        scoped = list_memories(scope_kind="global", limit=limit)
+    elif scope_kind == "agent":
+        scoped = list_memories(scope_kind="agent", agent=scope_value, limit=limit)
+    elif scope_kind == "workflow":
+        scoped = list_memories(scope_kind="workflow", workflow_id=scope_value, limit=limit) if scope_value else []
+    else:
+        scoped = list_memories(scope_kind="run", run_id=scope_value, limit=limit) if scope_value else []
+
+    continuity["recent"] = [memory_summary(memory) for memory in scoped]
+
+    workflow_memories = []
+    seen = set()
+    for workflow_id in session.workflow_ids:
+        for memory in list_memories(scope_kind="workflow", workflow_id=workflow_id, limit=limit):
+            memory_id = memory["memory_id"]
+            if memory_id in seen:
+                continue
+            workflow_memories.append(memory_summary(memory))
+            seen.add(memory_id)
+            if len(workflow_memories) >= limit:
+                break
+        if len(workflow_memories) >= limit:
+            break
+
+    continuity["workflow_recent"] = workflow_memories
+    continuity["message_memory_gap"] = bool(session.messages) and not continuity["recent"] and not continuity["workflow_recent"]
+    return continuity
+
+
+def session_workflow_rollup(workflows: list, missing_workflow_ids: list[str]) -> dict:
+    counts = {
+        "running": 0,
+        "waiting": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "missing": len(missing_workflow_ids),
+    }
+    latest = None
+    failures = []
+    for workflow in workflows:
+        counts[workflow.status] = counts.get(workflow.status, 0) + 1
+        if latest is None or workflow.updated_at > latest.updated_at:
+            latest = workflow
+        failure = workflow_failure_view(workflow)
+        if failure is not None:
+            failures.append(
+                {
+                    "workflow_id": workflow.workflow_id,
+                    "agent": workflow.agent,
+                    "failure_classification": failure["failure_classification"],
+                    "error": dict(failure["error"]) if failure["error"] is not None else None,
+                    "path": f"/workflows/{workflow.workflow_id}",
+                }
+            )
+
+    return {
+        "counts": counts,
+        "latest_workflow_id": latest.workflow_id if latest is not None else None,
+        "latest_status": latest.status if latest is not None else None,
+        "failures": failures[:10],
+        "missing_workflow_ids": list(missing_workflow_ids),
+    }
+
+
+def session_message_rollup(session) -> dict:
+    counts = {
+        "user": 0,
+        "assistant": 0,
+        "system": 0,
+        "submitted": 0,
+        "completed": 0,
+        "waiting": 0,
+        "errored": 0,
+    }
+    latest_message = None
+    for message in session.messages:
+        counts[message.role] = counts.get(message.role, 0) + 1
+        counts[message.status] = counts.get(message.status, 0) + 1
+        latest_message = message
+
+    return {
+        "message_count": len(session.messages),
+        "counts": counts,
+        "latest_message": (
+            {
+                "message_id": latest_message.message_id,
+                "role": latest_message.role,
+                "status": latest_message.status,
+                "created_at": latest_message.created_at,
+                "content_preview": truncate_text(latest_message.content, limit=100),
+                "workflow_id": latest_message.workflow_id,
+                "run_id": latest_message.run_id,
+            }
+            if latest_message is not None
+            else None
+        ),
+    }
+
+
+def session_current_workflow_view(session, workflow_views: list[dict]) -> dict | None:
+    if not workflow_views:
+        return None
+
+    current_workflow_id = session.current_workflow_id
+    selected = None
+    if current_workflow_id is not None:
+        for view in workflow_views:
+            if view["workflow_id"] == current_workflow_id:
+                selected = view
+                break
+    if selected is None:
+        selected = workflow_views[0]
+
+    pending_approvals = [approval for approval in selected.get("approvals", []) if approval.get("status") == "pending"]
+    return {
+        "workflow_id": selected["workflow_id"],
+        "status": selected["status"],
+        "agent": selected["agent"],
+        "path": f"/workflows/{selected['workflow_id']}",
+        "current_step": dict(selected["current_step"]),
+        "incident_rollup": dict(selected["incident"]["rollup"]),
+        "pending_approval_count": len(pending_approvals),
+        "actions": dict(selected["actions"]),
+        "recent_timeline": [dict(event) for event in selected["timelines"]["causality_chain"][:10]],
+    }
+
+
+def session_activity_timeline(session, current_workflow: dict | None, latest_incident: dict | None) -> list[dict]:
+    events = []
+    for message in session.messages:
+        events.append(
+            {
+                "source": "session",
+                "event_type": "session_message",
+                "timestamp": message.created_at,
+                "message_id": message.message_id,
+                "role": message.role,
+                "status": message.status,
+                "content_preview": truncate_text(message.content, limit=120),
+                "workflow_id": message.workflow_id,
+                "run_id": message.run_id,
+                "job_id": message.job_id,
+            }
+        )
+
+    if current_workflow is not None:
+        for event in current_workflow.get("recent_timeline", []):
+            enriched = dict(event)
+            enriched.setdefault("source", "workflow")
+            events.append(enriched)
+
+    if latest_incident is not None:
+        for event in latest_incident["incident"].get("recent_events", []):
+            enriched = dict(event)
+            enriched.setdefault("source", "incident")
+            events.append(enriched)
+
+    events.sort(key=event_sort_key, reverse=True)
+    return events[:15]
+
+
+def operator_dashboard_view(*, session_limit: int = 20) -> dict:
+    sessions = list_sessions(limit=session_limit)
+    status_counts = {}
+    for session in sessions:
+        status = session["status"]
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    return {
+        "sessions": sessions,
+        "session_rollup": {
+            "total_sessions": len(sessions),
+            "counts": status_counts,
+            "latest_session_id": sessions[0]["session_id"] if sessions else None,
+            "waiting_session_ids": [session["session_id"] for session in sessions if session["status"] == "waiting"],
+            "errored_session_ids": [session["session_id"] for session in sessions if session["status"] == "errored"],
+        },
+        "queue_health": queue_health_view(),
+        "worker_health": worker_health_view(),
+    }
+
+
+def session_control_view(session_id: str) -> dict:
+    session = load_session(session_id)
+    workflows, missing_workflow_ids = load_related_workflows_for_session(session)
+    workflow_views = [workflow_control_view(workflow.workflow_id) for workflow in workflows[:5]]
+    latest_workflow = workflows[0] if workflows else None
+    latest_incident = (
+        workflow_incident_summary_view(latest_workflow.workflow_id)
+        if latest_workflow is not None
+        else None
+    )
+    continuity = session_memory_continuity(session)
+    rollup = session_workflow_rollup(workflows, missing_workflow_ids)
+    message_rollup = session_message_rollup(session)
+    current_workflow = session_current_workflow_view(session, workflow_views)
+    recent_activity = session_activity_timeline(session, current_workflow, latest_incident)
+
+    return {
+        **session_snapshot(session),
+        "session_rollup": message_rollup,
+        "workflow_rollup": rollup,
+        "related_workflows": [
+            {
+                "workflow_id": view["workflow_id"],
+                "status": view["status"],
+                "agent": view["agent"],
+                "current_step": dict(view["current_step"]),
+                "path": f"/workflows/{view['workflow_id']}",
+                "incident_rollup": dict(view["incident"]["rollup"]),
+            }
+            for view in workflow_views
+        ],
+        "current_workflow": current_workflow,
+        "latest_incident": latest_incident,
+        "continuity": continuity,
+        "activity": {
+            "recent_timeline": recent_activity,
+        },
+        "actions": {
+            "append_message_path": f"/sessions/{session.session_id}/messages",
+            "current_workflow_path": (
+                f"/workflows/{session.current_workflow_id}"
+                if session.current_workflow_id is not None
+                else None
+            ),
+            "latest_incident_path": (
+                f"/incidents/workflows/{latest_workflow.workflow_id}/summary"
+                if latest_workflow is not None
+                else None
+            ),
+        },
+    }

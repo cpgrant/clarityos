@@ -1,15 +1,20 @@
 import hmac
+import json
 import os
+from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from runtime.agent import AGENTS_CONFIG_ENV_VAR, agents_config_path
 from runtime.artifact import ARTIFACT_DIR, ARTIFACT_STATE_SCHEMA, artifact_path, load_artifact
 from runtime.approval import APPROVAL_DIR, APPROVAL_STATE_SCHEMA, abort_approval, approval_path, approve_approval, deny_approval, get_approval
 from runtime.control_plane import (
+    operator_dashboard_view,
     queue_health_view,
     recover_workflow,
+    session_control_view,
     worker_health_view,
     workflow_control_view,
     workflow_incident_view,
@@ -46,6 +51,16 @@ from runtime.queue import (
     repair_stale_job_state,
     reschedule_job,
 )
+from runtime.session import (
+    SESSION_DIR,
+    SESSION_STATE_SCHEMA,
+    append_session_message as append_message_to_session,
+    create_session,
+    list_sessions,
+    load_session,
+    session_snapshot,
+    session_path,
+)
 from runtime.state import (
     PERSISTED_STATE_VERSION,
     inspect_state_payload,
@@ -71,9 +86,21 @@ from runtime.worker import (
 from runtime.workflow import WORKFLOW_DIR, WORKFLOW_STATE_SCHEMA, workflow_path
 from runtime.workflow_runner import replay_workflow, resume_workflow, safe_resume_workflow, start_child_workflow, start_workflow
 
-app = FastAPI(title="ClarityOS", version="1.0.0")
+BASE_DIR = Path(__file__).resolve().parent.parent
+ASSISTANT_UI_PATH = BASE_DIR / "ui" / "assistant.html"
+OPERATOR_UI_PATH = BASE_DIR / "ui" / "operator.html"
+WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
+WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
+
+app = FastAPI(title="ClarityOS", version="1.1.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
+WIDGET_ALLOWED_ORIGINS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_ORIGINS"
+WIDGET_BRAND_NAME_ENV_VAR = "CLARITYOS_WIDGET_BRAND_NAME"
+WIDGET_BRAND_TAGLINE_ENV_VAR = "CLARITYOS_WIDGET_BRAND_TAGLINE"
+WIDGET_BRAND_ACCENT_ENV_VAR = "CLARITYOS_WIDGET_BRAND_ACCENT"
+WIDGET_BRAND_AGENT_ENV_VAR = "CLARITYOS_WIDGET_DEFAULT_AGENT"
+WIDGET_LAUNCHER_LABEL_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_LABEL"
 
 
 @app.get("/status")
@@ -93,6 +120,18 @@ def operator_profile(
     try:
         require_operator_auth(x_operator_token)
         return operator_profile_status()
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/operator/dashboard")
+def operator_dashboard(
+    session_limit: int = 20,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return operator_dashboard_view(session_limit=session_limit)
     except Exception as exc:
         return error_response(exc)
 
@@ -124,6 +163,160 @@ def error_response(exc: Exception) -> JSONResponse:
             },
         },
     )
+
+
+def assistant_html() -> str:
+    return ASSISTANT_UI_PATH.read_text(encoding="utf-8")
+
+
+def operator_html() -> str:
+    return OPERATOR_UI_PATH.read_text(encoding="utf-8")
+
+
+def widget_html() -> str:
+    return WIDGET_UI_PATH.read_text(encoding="utf-8")
+
+
+def widget_script() -> str:
+    return WIDGET_SCRIPT_PATH.read_text(encoding="utf-8")
+
+
+def normalize_origin_list(raw_value: str | None) -> list[str]:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return []
+
+    origins = []
+    seen = set()
+    for item in raw_value.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        if value == "*":
+            return ["*"]
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(
+                f"Widget allowed origins must be absolute http/https origins, got `{value}`"
+            )
+        normalized = f"{parsed.scheme}://{parsed.netloc}"
+        if normalized not in seen:
+            origins.append(normalized)
+            seen.add(normalized)
+    return origins
+
+
+def widget_branding_config() -> dict[str, str]:
+    return {
+        "name": os.getenv(WIDGET_BRAND_NAME_ENV_VAR, "ClarityOS Assistant"),
+        "tagline": os.getenv(
+            WIDGET_BRAND_TAGLINE_ENV_VAR,
+            "A thin web gateway over the existing session runtime.",
+        ),
+        "accent": os.getenv(WIDGET_BRAND_ACCENT_ENV_VAR, "#176b52"),
+        "default_agent": os.getenv(WIDGET_BRAND_AGENT_ENV_VAR, "researcher"),
+        "launcher_label": os.getenv(WIDGET_LAUNCHER_LABEL_ENV_VAR, "Ask"),
+    }
+
+
+def widget_origin_allowed(
+    requested_origin: str | None,
+    *,
+    service_origin: str,
+    allowed_origins: list[str],
+) -> bool:
+    if requested_origin is None:
+        return True
+    if "*" in allowed_origins:
+        return True
+    if not allowed_origins:
+        return requested_origin == service_origin
+    return requested_origin in allowed_origins
+
+
+def widget_runtime_config(
+    *,
+    service_origin: str,
+    requested_origin: str | None = None,
+) -> dict[str, object]:
+    allowed_origins = normalize_origin_list(os.getenv(WIDGET_ALLOWED_ORIGINS_ENV_VAR))
+    return {
+        "service_origin": service_origin,
+        "allowed_origins": allowed_origins,
+        "origin_restriction_enabled": True,
+        "requested_origin": requested_origin,
+        "requested_origin_allowed": widget_origin_allowed(
+            requested_origin,
+            service_origin=service_origin,
+            allowed_origins=allowed_origins,
+        ),
+        "branding": widget_branding_config(),
+        "env_vars": {
+            "allowed_origins": WIDGET_ALLOWED_ORIGINS_ENV_VAR,
+            "brand_name": WIDGET_BRAND_NAME_ENV_VAR,
+            "brand_tagline": WIDGET_BRAND_TAGLINE_ENV_VAR,
+            "brand_accent": WIDGET_BRAND_ACCENT_ENV_VAR,
+            "default_agent": WIDGET_BRAND_AGENT_ENV_VAR,
+            "launcher_label": WIDGET_LAUNCHER_LABEL_ENV_VAR,
+        },
+    }
+
+
+def render_widget_html(config: dict[str, object]) -> str:
+    html = widget_html()
+    injected = (
+        "<script>"
+        f"window.__CLARITYOS_WIDGET_CONFIG__ = {json.dumps(config)};"
+        "</script>"
+    )
+    return html.replace("</head>", f"  {injected}\n</head>", 1)
+
+
+def widget_denied_html(config: dict[str, object]) -> str:
+    branding = config["branding"]
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{branding['name']}</title>
+  <style>
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Georgia, "Times New Roman", serif;
+      background: linear-gradient(180deg, #f9f4ec 0%, #f3eee5 100%);
+      color: #1f1a15;
+    }}
+    article {{
+      max-width: 420px;
+      margin: 24px;
+      padding: 24px;
+      border-radius: 20px;
+      background: rgba(255, 250, 244, 0.94);
+      border: 1px solid #dfd2c0;
+      box-shadow: 0 18px 40px rgba(31, 26, 21, 0.12);
+    }}
+    h1 {{ margin: 0 0 10px; font-size: 28px; }}
+    p {{ margin: 0 0 10px; line-height: 1.5; color: #665b4d; }}
+    code {{
+      display: inline-block;
+      background: #f0e7d8;
+      border-radius: 8px;
+      padding: 2px 8px;
+    }}
+  </style>
+</head>
+<body>
+  <article>
+    <h1>Widget Origin Not Allowed</h1>
+    <p>This embeddable widget is configured for a narrow set of hosts.</p>
+    <p>Requested parent origin: <code>{config.get("requested_origin") or "unknown"}</code></p>
+    <p>Set <code>{WIDGET_ALLOWED_ORIGINS_ENV_VAR}</code> to allow this host explicitly.</p>
+  </article>
+</body>
+</html>"""
 
 
 def operator_auth_enabled() -> bool:
@@ -166,10 +359,25 @@ def operator_profile_status() -> dict[str, object]:
                 "path": str(models_config_path()),
                 "env_var": MODELS_CONFIG_ENV_VAR,
             },
+            "widget": {
+                "allowed_origins_env_var": WIDGET_ALLOWED_ORIGINS_ENV_VAR,
+                "branding_env_vars": {
+                    "name": WIDGET_BRAND_NAME_ENV_VAR,
+                    "tagline": WIDGET_BRAND_TAGLINE_ENV_VAR,
+                    "accent": WIDGET_BRAND_ACCENT_ENV_VAR,
+                    "default_agent": WIDGET_BRAND_AGENT_ENV_VAR,
+                    "launcher_label": WIDGET_LAUNCHER_LABEL_ENV_VAR,
+                },
+                "defaults": {
+                    "allowed_origins": normalize_origin_list(os.getenv(WIDGET_ALLOWED_ORIGINS_ENV_VAR)),
+                    "branding": widget_branding_config(),
+                },
+            },
         },
         "state": {
             "current_version": PERSISTED_STATE_VERSION,
             "directories": {
+                "sessions": str(SESSION_DIR),
                 "workflows": str(WORKFLOW_DIR),
                 "jobs": str(JOB_DIR),
                 "workers": str(WORKER_DIR),
@@ -201,6 +409,63 @@ def run(payload: dict):
         return error_response(exc)
 
 
+@app.get("/assistant")
+def assistant_surface():
+    try:
+        return HTMLResponse(assistant_html())
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/operator")
+def operator_surface():
+    try:
+        return HTMLResponse(operator_html())
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/widget")
+def widget_surface(
+    request: Request,
+    parent_origin: str | None = None,
+):
+    try:
+        service_origin = str(request.base_url).rstrip("/")
+        config = widget_runtime_config(service_origin=service_origin, requested_origin=parent_origin)
+        if parent_origin is not None and not config["requested_origin_allowed"]:
+            return HTMLResponse(widget_denied_html(config), status_code=403)
+        return HTMLResponse(render_widget_html(config))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/widget.js")
+def widget_loader(request: Request):
+    try:
+        service_origin = str(request.base_url).rstrip("/")
+        config = widget_runtime_config(service_origin=service_origin)
+        payload = (
+            f"window.__CLARITYOS_WIDGET_CONFIG__ = {json.dumps(config)};\n"
+            f"{widget_script()}"
+        )
+        return Response(payload, media_type="application/javascript")
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/widget/config")
+def widget_config(
+    request: Request,
+    origin: str | None = None,
+):
+    try:
+        service_origin = str(request.base_url).rstrip("/")
+        return widget_runtime_config(service_origin=service_origin, requested_origin=origin)
+    except Exception as exc:
+        return error_response(exc)
+
+
 def workflow_run(payload: dict):
     user_input = payload.get("input", "")
     agent_name = payload.get("agent", "default")
@@ -215,6 +480,87 @@ def workflow_run(payload: dict):
         tool_args=tool_args,
         approval_id=approval_id,
     )
+
+
+@app.post("/sessions")
+def session_create(payload: dict | None = None):
+    try:
+        body = payload or {}
+        return create_session(
+            title=body.get("title"),
+            agent=body.get("agent", "default"),
+            metadata=body.get("metadata"),
+            memory_scope=body.get("memory_scope"),
+        )
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/sessions")
+def session_list(
+    status: str | None = None,
+    agent: str | None = None,
+    limit: int | None = None,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return {
+            "sessions": list_sessions(status=status, agent=agent, limit=limit),
+        }
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/sessions/{session_id}")
+def session_status(
+    session_id: str,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return session_snapshot(load_session(session_id))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/assistant/sessions/{session_id}")
+def assistant_session_status(session_id: str):
+    try:
+        return session_snapshot(load_session(session_id))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/sessions/{session_id}/control")
+def session_control(
+    session_id: str,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return session_control_view(session_id)
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/sessions/{session_id}/messages")
+def session_append_message(
+    session_id: str,
+    payload: dict,
+):
+    try:
+        return append_message_to_session(
+            session_id,
+            content=payload.get("input", ""),
+            agent=payload.get("agent"),
+            tool_name=payload.get("tool"),
+            tool_args=payload.get("tool_args"),
+            approval_id=payload.get("approval_id"),
+            metadata=payload.get("metadata"),
+        )
+    except Exception as exc:
+        return error_response(exc)
 
 
 def queue_job_request(payload: dict):
@@ -566,6 +912,7 @@ def parse_tags_param(tags: str | None) -> list[str] | None:
 
 def persisted_state_registry(kind: str | None = None) -> dict[str, dict[str, object]] | dict[str, object]:
     registry = {
+        "sessions": {"schema": SESSION_STATE_SCHEMA, "path": session_path, "directory": SESSION_DIR},
         "workflows": {"schema": WORKFLOW_STATE_SCHEMA, "path": workflow_path, "directory": WORKFLOW_DIR},
         "jobs": {"schema": JOB_STATE_SCHEMA, "path": job_path, "directory": JOB_DIR},
         "memories": {"schema": MEMORY_STATE_SCHEMA, "path": memory_path, "directory": MEMORY_DIR},
@@ -577,7 +924,7 @@ def persisted_state_registry(kind: str | None = None) -> dict[str, dict[str, obj
         return registry
     if kind not in registry:
         raise ValueError(
-            "State `kind` must be one of: workflows, jobs, memories, workers, approvals, artifacts"
+            "State `kind` must be one of: sessions, workflows, jobs, memories, workers, approvals, artifacts"
         )
     return registry[kind]
 

@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClarityOS Operator Console</title>
+  <style>
+    :root {
+      --bg: #f3f6f4;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: #ffffff;
+      --ink: #15211c;
+      --muted: #5f7168;
+      --accent: #176b52;
+      --accent-soft: #d8eee5;
+      --warn: #8b5a10;
+      --danger: #8b2731;
+      --border: #d7e2dc;
+      --shadow: 0 18px 40px rgba(21, 33, 28, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      background:
+        radial-gradient(circle at top right, rgba(23, 107, 82, 0.08), transparent 32%),
+        linear-gradient(180deg, #f8fbf9 0%, var(--bg) 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 18px 40px;
+    }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(34px, 4vw, 52px);
+      line-height: 0.95;
+      font-weight: 600;
+    }
+
+    .lede {
+      margin: 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.5;
+    }
+
+    .auth-bar {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+      min-width: min(100%, 360px);
+    }
+
+    .auth-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 18px;
+      padding: 18px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .section-title {
+      margin: 0 0 10px;
+      font-size: 13px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .sessions {
+      display: grid;
+      gap: 10px;
+      max-height: 72vh;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .session-item {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fbfdfc;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .session-item:hover,
+    .session-item.active {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      background: #f2faf6;
+    }
+
+    .session-item strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .session-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .main {
+      display: grid;
+      gap: 18px;
+    }
+
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      padding: 18px 20px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.65);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .detail {
+      padding: 20px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+
+    .detail-block {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .kvs {
+      display: grid;
+      gap: 10px;
+    }
+
+    .kv {
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(215, 226, 220, 0.8);
+    }
+
+    .kv:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .kv strong {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .collection {
+      display: grid;
+      gap: 10px;
+      max-height: 320px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .entry {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--panel-strong);
+      padding: 12px 14px;
+    }
+
+    .entry strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .entry small,
+    .entry div,
+    .entry span {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    input,
+    button {
+      font: inherit;
+    }
+
+    input {
+      flex: 1;
+      min-width: 180px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 12px 14px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    button.secondary {
+      background: #e8f0ec;
+      color: var(--ink);
+    }
+
+    button.warn {
+      background: #f0e6d2;
+      color: var(--warn);
+    }
+
+    button.danger {
+      background: #f5dde0;
+      color: var(--danger);
+    }
+
+    .status-line {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status-line.error {
+      color: var(--danger);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    @media (max-width: 1100px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .health-grid,
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="masthead">
+      <div>
+        <div class="eyebrow">ClarityOS v1.1</div>
+        <h1>Operator Console</h1>
+        <p class="lede">A thin control-plane UI for sessions, workflows, incidents, queue health, and worker health. The runtime still owns the real recovery and execution logic.</p>
+      </div>
+
+      <div class="auth-bar">
+        <div class="label">Operator Access</div>
+        <div class="auth-row">
+          <input id="operator-token" type="password" placeholder="Operator token for protected endpoints">
+          <button id="connect-operator" class="primary" type="button">Connect</button>
+        </div>
+        <div class="auth-row">
+          <span id="auth-pill" class="pill">Checking auth posture</span>
+          <button id="refresh-dashboard" class="secondary" type="button">Refresh Dashboard</button>
+        </div>
+        <div id="status-line" class="status-line">Loading operator console.</div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <aside class="panel sidebar">
+        <section>
+          <h2 class="section-title">Sessions</h2>
+          <div class="action-row" style="margin-bottom: 10px;">
+            <button id="reload-sessions" class="secondary" type="button">Reload Sessions</button>
+          </div>
+          <div id="sessions" class="sessions">
+            <div class="empty">No sessions loaded yet.</div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="health-grid">
+          <article class="panel card">
+            <div class="label">Queue Health</div>
+            <div id="queue-summary" class="kvs"></div>
+            <div id="queue-stats" class="stats"></div>
+            <div id="queue-events" class="collection" style="margin-top: 14px;"></div>
+          </article>
+
+          <article class="panel card">
+            <div class="label">Worker Health</div>
+            <div id="worker-summary" class="kvs"></div>
+            <div id="worker-stats" class="stats"></div>
+            <div id="worker-events" class="collection" style="margin-top: 14px;"></div>
+          </article>
+        </section>
+
+        <section class="panel detail">
+          <div class="label">Selected Session</div>
+          <div id="session-header" class="kvs">
+            <div class="empty">Select a session to inspect its related workflows and incidents.</div>
+          </div>
+
+          <div class="detail-grid">
+            <section class="detail-block">
+              <div class="label">Workflow And Incident View</div>
+              <div id="workflow-actions" class="action-row" style="margin-bottom: 12px;"></div>
+              <div id="latest-incident" class="kvs"></div>
+              <div class="label" style="margin-top: 14px;">Related Workflows</div>
+              <div id="related-workflows" class="collection"></div>
+              <div class="label" style="margin-top: 14px;">Recent Activity</div>
+              <div id="session-activity" class="collection"></div>
+            </section>
+
+            <section class="detail-block">
+              <div class="label">Continuity And Session Scope</div>
+              <div id="session-continuity" class="kvs"></div>
+              <div class="label" style="margin-top: 14px;">Recent Scoped Memories</div>
+              <div id="continuity-memories" class="collection"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN_STORAGE_KEY = "clarityos-operator-token";
+    const SELECTED_SESSION_KEY = "clarityos-operator-selected-session";
+
+    const tokenInputEl = document.getElementById("operator-token");
+    const connectEl = document.getElementById("connect-operator");
+    const refreshDashboardEl = document.getElementById("refresh-dashboard");
+    const reloadSessionsEl = document.getElementById("reload-sessions");
+    const sessionsEl = document.getElementById("sessions");
+    const authPillEl = document.getElementById("auth-pill");
+    const statusLineEl = document.getElementById("status-line");
+    const queueSummaryEl = document.getElementById("queue-summary");
+    const queueStatsEl = document.getElementById("queue-stats");
+    const queueEventsEl = document.getElementById("queue-events");
+    const workerSummaryEl = document.getElementById("worker-summary");
+    const workerStatsEl = document.getElementById("worker-stats");
+    const workerEventsEl = document.getElementById("worker-events");
+    const sessionHeaderEl = document.getElementById("session-header");
+    const latestIncidentEl = document.getElementById("latest-incident");
+    const relatedWorkflowsEl = document.getElementById("related-workflows");
+    const sessionActivityEl = document.getElementById("session-activity");
+    const sessionContinuityEl = document.getElementById("session-continuity");
+    const continuityMemoriesEl = document.getElementById("continuity-memories");
+    const workflowActionsEl = document.getElementById("workflow-actions");
+
+    let operatorAuth = null;
+    let selectedSessionId = window.localStorage.getItem(SELECTED_SESSION_KEY);
+    let currentWorkflowActions = null;
+    tokenInputEl.value = window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+
+    function setStatus(message, isError = false) {
+      statusLineEl.textContent = message;
+      statusLineEl.classList.toggle("error", isError);
+    }
+
+    function operatorHeaders() {
+      const headers = { "Content-Type": "application/json" };
+      const token = tokenInputEl.value.trim();
+      if (token) {
+        headers["X-Operator-Token"] = token;
+      }
+      return headers;
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        headers: {
+          ...operatorHeaders(),
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.status === "error") {
+        throw new Error(payload?.error?.message || `Request failed with status ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function loadOperatorAuth() {
+      operatorAuth = await fetchJson("/operator/auth");
+      authPillEl.textContent = operatorAuth.enabled ? "Auth required" : "Auth disabled";
+      authPillEl.style.background = operatorAuth.enabled ? "#efe6cf" : "var(--accent-soft)";
+      authPillEl.style.color = operatorAuth.enabled ? "var(--warn)" : "var(--accent)";
+      return operatorAuth;
+    }
+
+    function kvMarkup(rows) {
+      if (!rows.length) {
+        return '<div class="empty">No details available.</div>';
+      }
+      return rows.map((row) => `
+        <div class="kv">
+          <strong>${row.label}</strong>
+          <span>${row.value}</span>
+        </div>
+      `).join("");
+    }
+
+    function describeEventSummary(value) {
+      if (value === null || value === undefined) {
+        return "None";
+      }
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+      }
+      if (typeof value === "object") {
+        return value.message || value.event_type || value.kind || value.source || JSON.stringify(value);
+      }
+      return String(value);
+    }
+
+    function statMarkup(items) {
+      return items.map((item) => `
+        <div class="stat">
+          <strong>${item.label}</strong>
+          <span>${item.value}</span>
+        </div>
+      `).join("");
+    }
+
+    function entryMarkup(items, formatter) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return '<div class="empty">Nothing recent.</div>';
+      }
+      return items.map(formatter).join("");
+    }
+
+    function renderQueueHealth(health) {
+      queueSummaryEl.innerHTML = kvMarkup([
+        { label: "Oldest queued", value: health.oldest_queued_at || "None" },
+        { label: "Next ready", value: health.next_ready_at || "None" },
+        { label: "Oldest retry", value: health.oldest_retry_at || "None" },
+      ]);
+      queueStatsEl.innerHTML = statMarkup([
+        { label: "Queued", value: health.counts?.queued || 0 },
+        { label: "Running", value: health.counts?.running || 0 },
+        { label: "Dead letter", value: health.dead_letter_count || 0 },
+      ]);
+      queueEventsEl.innerHTML = entryMarkup(
+        health.lifecycle?.recent_events || health.trends?.recent_events || [],
+        (event) => `
+          <article class="entry">
+            <strong>${event.event_type || "event"} · ${event.job_id || "job"}</strong>
+            <div>${event.reason || event.message || "No extra detail"}</div>
+            <small>${event.timestamp || "Unknown time"}</small>
+          </article>
+        `,
+      );
+    }
+
+    function renderWorkerHealth(health) {
+      workerSummaryEl.innerHTML = kvMarkup([
+        { label: "Max heartbeat age", value: health.max_heartbeat_age_seconds ?? "None" },
+        { label: "Min lease remaining", value: health.min_lease_remaining_seconds ?? "None" },
+        { label: "Orphaned workers", value: (health.orphaned_worker_ids || []).length },
+      ]);
+      workerStatsEl.innerHTML = statMarkup([
+        { label: "Idle", value: health.counts?.idle || 0 },
+        { label: "Busy", value: health.counts?.busy || 0 },
+        { label: "Expired", value: health.counts?.expired || 0 },
+      ]);
+      workerEventsEl.innerHTML = entryMarkup(
+        health.lifecycle?.recent_events || health.recent_events || [],
+        (event) => `
+          <article class="entry">
+            <strong>${event.event_type || "event"} · ${event.worker_id || "worker"}</strong>
+            <div>${event.reason || event.message || "No extra detail"}</div>
+            <small>${event.timestamp || "Unknown time"}</small>
+          </article>
+        `,
+      );
+    }
+
+    function renderSessions(sessions) {
+      if (!Array.isArray(sessions) || sessions.length === 0) {
+        sessionsEl.innerHTML = '<div class="empty">No sessions available yet.</div>';
+        return;
+      }
+
+      sessionsEl.innerHTML = sessions.map((session) => `
+        <article class="session-item ${session.session_id === selectedSessionId ? "active" : ""}" data-session-id="${session.session_id}">
+          <strong>${session.title || "Untitled session"}</strong>
+          <span>Status: ${session.status || "unknown"}</span>
+          <span>Agent: ${session.agent || "unknown"}</span>
+          <span>Messages: ${session.message_count || 0}</span>
+        </article>
+      `).join("");
+
+      for (const item of sessionsEl.querySelectorAll(".session-item")) {
+        item.addEventListener("click", async () => {
+          selectedSessionId = item.dataset.sessionId;
+          window.localStorage.setItem(SELECTED_SESSION_KEY, selectedSessionId);
+          await refreshSelectedSession();
+          await refreshDashboard();
+        });
+      }
+    }
+
+    function renderSessionControl(control) {
+      sessionHeaderEl.innerHTML = kvMarkup([
+        { label: "Session", value: control.title || control.session_id },
+        { label: "Status", value: control.status || "unknown" },
+        { label: "Current workflow", value: control.current_workflow_id || "None" },
+        { label: "Messages", value: control.session_rollup?.message_count || (control.messages || []).length },
+        { label: "Memory scope", value: `${control.memory_scope?.kind || "unknown"}${control.memory_scope?.value ? ":" + control.memory_scope.value : ""}` },
+        { label: "Latest message", value: control.session_rollup?.latest_message?.content_preview || "None" },
+      ]);
+
+      const incident = control.latest_incident?.rollup || {};
+      const currentWorkflow = control.current_workflow || {};
+      latestIncidentEl.innerHTML = kvMarkup([
+        { label: "Current blocker", value: describeEventSummary(incident.current_blocker) },
+        { label: "First failure", value: describeEventSummary(incident.first_failure) },
+        { label: "Latest recovery", value: describeEventSummary(incident.latest_recovery_attempt) },
+        { label: "Pending approvals", value: currentWorkflow.pending_approval_count ?? 0 },
+        { label: "Current step", value: currentWorkflow.current_step?.step_type || "None" },
+      ]);
+
+      relatedWorkflowsEl.innerHTML = entryMarkup(control.related_workflows || [], (workflow) => `
+        <article class="entry">
+          <strong>${workflow.workflow_id}</strong>
+          <div>Status: ${workflow.status}</div>
+          <div>Agent: ${workflow.agent}</div>
+          <div>Step: ${workflow.current_step?.step_type || "unknown"}</div>
+          <div>Blocker: ${workflow.incident_rollup?.current_blocker || "None"}</div>
+        </article>
+      `);
+
+      sessionActivityEl.innerHTML = entryMarkup(control.activity?.recent_timeline || [], (event) => `
+        <article class="entry">
+          <strong>${event.source || "event"} · ${event.event_type || event.role || "activity"}</strong>
+          <div>${event.content_preview || event.message || event.reason || event.to_status || "No extra detail"}</div>
+          <div>${event.workflow_id ? "Workflow: " + event.workflow_id : ""}${event.step_type ? " · Step: " + event.step_type : ""}</div>
+          <small>${event.timestamp || "Unknown time"}</small>
+        </article>
+      `);
+
+      sessionContinuityEl.innerHTML = kvMarkup([
+        { label: "Recent scoped memories", value: (control.continuity?.recent || []).length },
+        { label: "Workflow memories", value: (control.continuity?.workflow_recent || []).length },
+        { label: "Message memory gap", value: control.continuity?.message_memory_gap ? "Yes" : "No" },
+        { label: "Waiting messages", value: control.session_rollup?.counts?.waiting ?? 0 },
+        { label: "Errored messages", value: control.session_rollup?.counts?.errored ?? 0 },
+      ]);
+
+      continuityMemoriesEl.innerHTML = entryMarkup(
+        [...(control.continuity?.recent || []), ...(control.continuity?.workflow_recent || [])].slice(0, 10),
+        (memory) => `
+          <article class="entry">
+            <strong>${memory.memory_type || "memory"} · ${memory.memory_id || "unknown"}</strong>
+            <div>${memory.scope_kind || "scope"}${memory.agent ? " / " + memory.agent : ""}${memory.workflow_id ? " / " + memory.workflow_id : ""}</div>
+            <small>${memory.updated_at || memory.created_at || "Unknown time"}</small>
+          </article>
+        `,
+      );
+    }
+
+    async function loadCurrentWorkflowActions(control) {
+      workflowActionsEl.innerHTML = "";
+      currentWorkflowActions = null;
+
+      if (!control?.current_workflow) {
+        workflowActionsEl.innerHTML = '<div class="empty">No active workflow for this session.</div>';
+        return;
+      }
+
+      const workflow = control.current_workflow;
+      currentWorkflowActions = workflow.actions;
+
+      const actions = [];
+      if (workflow.actions?.resume_safe?.available) {
+        actions.push({ label: "Resume Safely", className: "primary", action: "resume_safe" });
+      }
+      if (workflow.actions?.replay?.available) {
+        actions.push({ label: "Replay Workflow", className: "warn", action: "replay" });
+      }
+      if (workflow.actions?.recover?.available) {
+        actions.push({ label: "Recover Jobs", className: "danger", action: "recover" });
+      }
+
+      if (!actions.length) {
+        workflowActionsEl.innerHTML = '<div class="empty">No operator recovery action is currently available.</div>';
+        return;
+      }
+
+      workflowActionsEl.innerHTML = actions.map((item) => `
+        <button type="button" class="${item.className}" data-action="${item.action}">${item.label}</button>
+      `).join("");
+
+      for (const button of workflowActionsEl.querySelectorAll("button[data-action]")) {
+        button.addEventListener("click", async () => {
+          await runWorkflowAction(control.current_workflow_id, button.dataset.action);
+        });
+      }
+    }
+
+    async function runWorkflowAction(workflowId, action) {
+      let path = null;
+      let body = undefined;
+      if (action === "resume_safe") {
+        path = `/workflows/${workflowId}/resume-safe`;
+        body = JSON.stringify({});
+      } else if (action === "replay") {
+        path = `/workflows/${workflowId}/replay`;
+        body = JSON.stringify({});
+      } else if (action === "recover") {
+        const recover = currentWorkflowActions?.recover || {};
+        path = `/workflows/${workflowId}/recover`;
+        body = JSON.stringify({
+          reclaim_expired_jobs: Array.isArray(recover.expired_running_job_ids) && recover.expired_running_job_ids.length > 0,
+          reschedule_failed_jobs: Array.isArray(recover.failed_job_ids) && recover.failed_job_ids.length > 0,
+          reschedule_dead_letter_jobs: Array.isArray(recover.dead_letter_job_ids) && recover.dead_letter_job_ids.length > 0,
+        });
+      }
+
+      if (!path) {
+        return;
+      }
+
+      setStatus(`Running ${action} for ${workflowId}...`);
+      try {
+        await fetchJson(path, { method: "POST", body });
+        setStatus(`Completed ${action} for ${workflowId}.`);
+        await refreshSelectedSession();
+        await refreshDashboard();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function refreshSelectedSession() {
+      if (!selectedSessionId) {
+        sessionHeaderEl.innerHTML = '<div class="empty">Select a session to inspect its related workflows and incidents.</div>';
+        latestIncidentEl.innerHTML = '<div class="empty">No session selected.</div>';
+        relatedWorkflowsEl.innerHTML = '<div class="empty">No related workflows yet.</div>';
+        sessionActivityEl.innerHTML = '<div class="empty">No recent activity yet.</div>';
+        sessionContinuityEl.innerHTML = '<div class="empty">No continuity data yet.</div>';
+        continuityMemoriesEl.innerHTML = '<div class="empty">No memories to show.</div>';
+        workflowActionsEl.innerHTML = '<div class="empty">No workflow selected.</div>';
+        currentWorkflowActions = null;
+        return;
+      }
+
+      const control = await fetchJson(`/sessions/${selectedSessionId}/control`);
+      renderSessionControl(control);
+      await loadCurrentWorkflowActions(control);
+    }
+
+    async function refreshDashboard() {
+      const dashboard = await fetchJson("/operator/dashboard?session_limit=20");
+
+      renderSessions(dashboard.sessions || []);
+      renderQueueHealth(dashboard.queue_health || {});
+      renderWorkerHealth(dashboard.worker_health || {});
+
+      if (!selectedSessionId && Array.isArray(dashboard.sessions) && dashboard.sessions.length > 0) {
+        selectedSessionId = dashboard.sessions[0].session_id;
+        window.localStorage.setItem(SELECTED_SESSION_KEY, selectedSessionId);
+      }
+      await refreshSelectedSession();
+    }
+
+    async function connectAndLoad() {
+      try {
+        await loadOperatorAuth();
+        if (tokenInputEl.value.trim()) {
+          window.localStorage.setItem(TOKEN_STORAGE_KEY, tokenInputEl.value.trim());
+        } else {
+          window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+        await refreshDashboard();
+        setStatus("Operator console refreshed.");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    connectEl.addEventListener("click", connectAndLoad);
+    refreshDashboardEl.addEventListener("click", connectAndLoad);
+    reloadSessionsEl.addEventListener("click", connectAndLoad);
+
+    window.addEventListener("load", async () => {
+      await connectAndLoad();
+    });
+  </script>
+</body>
+</html>

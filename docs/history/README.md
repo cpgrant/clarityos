@@ -13,7 +13,8 @@ Available snapshots:
 - `v0.8.md`
 - `v0.9.md`
 - `v1.0.md`
+- `v1.1.md`
 
-Latest archived milestone: `v1.0`
+Latest archived milestone: `v1.1`
 
-That `v1.0` snapshot is the baseline archive for the active `v1.1` assistant-surface milestone.
+That `v1.1` snapshot is the baseline archive for the active `v1.2` assistant deployment hardening milestone.

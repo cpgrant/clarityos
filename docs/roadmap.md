@@ -6,9 +6,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.0`
-- Next planned milestone: `v1.1`
-- Next planned slice: `v1.1` slice 1 session and conversation model
+- Latest completed milestone: `v1.1`
+- Next planned milestone: `v1.2`
+- Next planned slice: `v1.2` slice 1 session ownership and surface auth
 
 ## Milestones
 
@@ -140,17 +140,17 @@ Release gates:
 - documented playbooks map directly to real operator endpoints
 
 13. `v1.1` - first assistant surface and session gateway
-Status: planned
+Status: completed
 
 Goal:
 Deliver the first real “OpenClaw-ish” use case on top of the hardened runtime: one assistant surface, one explicit session model, and one thin operator-facing UI, while preserving ClarityOS’s stronger guarantees and bounded execution model.
 
 Slices:
 
-- Slice 1: session and conversation model - planned
-- Slice 2: first assistant surface - planned
-- Slice 3: operator UI and conversation inspection - planned
-- Slice 4: first external channel or gateway adapter - planned
+- Slice 1: session and conversation model - completed
+- Slice 2: first assistant surface - completed
+- Slice 3: operator UI and conversation inspection - completed
+- Slice 4: first external channel or gateway adapter - completed
 
 Acceptance criteria:
 
@@ -159,3 +159,29 @@ Acceptance criteria:
 - Operators can inspect sessions, related workflows, incidents, and recovery actions through a simple UI rather than API-only access.
 - Channel integration remains thin: surface adapters hand work to the existing workflow, queue, memory, and control-plane layers rather than duplicating runtime logic.
 - The shipped use case is intentionally narrow and reliable, with one strong surface before broader channel expansion.
+
+Chosen first adapter:
+
+- embeddable web widget loaded through `/widget.js` and rendered by `/widget`
+- browser-only, same-runtime, and self-hosted
+- explicitly not Telegram, Slack, or broad multi-channel routing at this stage
+
+14. `v1.2` - assistant deployment hardening
+Status: planned
+
+Goal:
+Turn the new assistant-facing surfaces into a narrowly deployable assistant profile with explicit auth, embed posture, and operator support boundaries.
+
+Slices:
+
+- Slice 1: session ownership and surface auth - planned
+- Slice 2: embed policy and branded deployment profile - planned
+- Slice 3: assistant operator playbooks and maintenance flows - planned
+- Slice 4: first assistant deployment path and release criteria - planned
+
+Acceptance criteria:
+
+- Assistant and operator surfaces have explicit auth and session-ownership expectations rather than relying on development-only posture.
+- Embed origins, branding defaults, and surface configuration are documented and adjustable without code changes.
+- Operators have playbooks for assistant-surface incidents, recovery, pruning, and deployment maintenance.
+- One narrow assistant deployment path is measurable, supportable, and clearly in scope before broader surface expansion.

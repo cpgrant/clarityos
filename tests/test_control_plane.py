@@ -7,12 +7,15 @@ import runtime.approval as approval
 import runtime.artifact as artifact
 import runtime.memory as memory
 import runtime.queue as queue
+import runtime.session as session
 import runtime.trace as trace
 import runtime.worker as worker
 import runtime.workflow as workflow
 from runtime.control_plane import (
+    operator_dashboard_view,
     queue_health_view,
     recover_workflow,
+    session_control_view,
     worker_health_view,
     workflow_control_view,
     workflow_incident_summary_view,
@@ -29,6 +32,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.memory_dir = self.root_dir / "memories"
         self.job_dir = self.root_dir / "jobs"
         self.log_dir = self.root_dir / "logs"
+        self.session_dir = self.root_dir / "sessions"
         self.worker_dir = self.root_dir / "workers"
         self.workflow_dir = self.root_dir / "workflows"
         self.approval_dir.mkdir()
@@ -36,6 +40,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.memory_dir.mkdir()
         self.job_dir.mkdir()
         self.log_dir.mkdir()
+        self.session_dir.mkdir()
         self.worker_dir.mkdir()
         self.workflow_dir.mkdir()
         self.approval_dir_patcher = patch.object(approval, "APPROVAL_DIR", self.approval_dir)
@@ -43,6 +48,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.memory_dir_patcher = patch.object(memory, "MEMORY_DIR", self.memory_dir)
         self.job_dir_patcher = patch.object(queue, "JOB_DIR", self.job_dir)
         self.log_dir_patcher = patch.object(trace, "LOG_DIR", self.log_dir)
+        self.session_dir_patcher = patch.object(session, "SESSION_DIR", self.session_dir)
         self.worker_dir_patcher = patch.object(worker, "WORKER_DIR", self.worker_dir)
         self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflow_dir)
         self.approval_dir_patcher.start()
@@ -50,6 +56,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.memory_dir_patcher.start()
         self.job_dir_patcher.start()
         self.log_dir_patcher.start()
+        self.session_dir_patcher.start()
         self.worker_dir_patcher.start()
         self.workflow_dir_patcher.start()
 
@@ -59,6 +66,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.memory_dir_patcher.stop()
         self.job_dir_patcher.stop()
         self.log_dir_patcher.stop()
+        self.session_dir_patcher.stop()
         self.worker_dir_patcher.stop()
         self.workflow_dir_patcher.stop()
         self.temp_dir.cleanup()
@@ -582,6 +590,81 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertIn(registered_worker["worker_id"], workers_health["orphaned_worker_ids"])
         self.assertIn(registered_worker["worker_id"], workers_health["expired_worker_ids"])
         self.assertIn("recent_events", workers_health["trends"])
+
+    def test_session_control_view_aggregates_workflows_and_memory_continuity(self) -> None:
+        record = session.create_session(
+            title="Research thread",
+            agent="researcher",
+            memory_scope={"kind": "workflow", "value": "wf-session"},
+        )
+
+        workflow_state = workflow.create_workflow_state(
+            run_id="wf-session",
+            agent="researcher",
+            run_type="model",
+            request={"input": "hello", "agent": "researcher"},
+        )
+        workflow.complete_workflow(workflow_state)
+        workflow.write_workflow(workflow_state)
+
+        saved_memory = memory.create_memory(
+            memory_type="summary",
+            scope_kind="workflow",
+            workflow_id="wf-session",
+            agent="researcher",
+            payload={"text": "Summarized continuity"},
+            tags=["session"],
+        )
+
+        loaded_session = session.load_session(record["session_id"])
+        loaded_session.status = "active"
+        loaded_session.current_workflow_id = "wf-session"
+        loaded_session.workflow_ids = ["wf-session"]
+        loaded_session.last_run_id = "wf-session"
+        loaded_session.messages.append(
+            session.SessionMessage(
+                message_id="message-1",
+                role="user",
+                content="hello",
+                status="completed",
+                created_at="2026-01-01T00:00:00+00:00",
+                agent="researcher",
+                workflow_id="wf-session",
+                run_id="wf-session",
+            )
+        )
+        session.write_session(loaded_session)
+
+        view = session_control_view(record["session_id"])
+
+        self.assertEqual(view["session_id"], record["session_id"])
+        self.assertEqual(view["session_rollup"]["message_count"], 1)
+        self.assertEqual(view["session_rollup"]["counts"]["user"], 1)
+        self.assertEqual(view["workflow_rollup"]["counts"]["succeeded"], 1)
+        self.assertEqual(view["workflow_rollup"]["latest_workflow_id"], "wf-session")
+        self.assertEqual(view["current_workflow"]["workflow_id"], "wf-session")
+        self.assertIn("current_blocker", view["current_workflow"]["incident_rollup"])
+        self.assertEqual(view["related_workflows"][0]["workflow_id"], "wf-session")
+        self.assertEqual(view["continuity"]["scope"]["kind"], "workflow")
+        self.assertEqual(view["continuity"]["recent"][0]["memory_id"], saved_memory["memory_id"])
+        self.assertFalse(view["continuity"]["message_memory_gap"])
+        self.assertEqual(view["actions"]["append_message_path"], f"/sessions/{record['session_id']}/messages")
+        self.assertTrue(any(event["source"] == "session" for event in view["activity"]["recent_timeline"]))
+
+    def test_operator_dashboard_view_aggregates_sessions_and_runtime_health(self) -> None:
+        first = session.create_session(title="One", agent="researcher")
+        second = session.create_session(title="Two", agent="default")
+        waiting = session.load_session(second["session_id"])
+        session.transition_session(waiting, "waiting")
+        session.write_session(waiting)
+
+        dashboard = operator_dashboard_view(session_limit=10)
+
+        self.assertEqual(dashboard["session_rollup"]["total_sessions"], 2)
+        self.assertEqual(dashboard["session_rollup"]["counts"]["waiting"], 1)
+        self.assertIn(first["session_id"], [item["session_id"] for item in dashboard["sessions"]])
+        self.assertIn("queue_health", dashboard)
+        self.assertIn("worker_health", dashboard)
 
 
 if __name__ == "__main__":
