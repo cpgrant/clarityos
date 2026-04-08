@@ -6,9 +6,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v0.9`
-- Next planned milestone: `v1.0`
-- Next planned slice: `v1.0` slice 4 first production path and release criteria
+- Latest completed milestone: `v1.0`
+- Next planned milestone: `v1.1`
+- Next planned slice: `v1.1` slice 1 session and conversation model
 
 ## Milestones
 
@@ -104,7 +104,7 @@ Acceptance criteria:
 - Production hardening includes load, soak, and recovery validation beyond the minimal unit suite.
 
 12. `v1.0` - release readiness and first production profile
-Status: planned
+Status: completed
 
 Goal:
 Translate the hardened runtime into a repeatable, supportable production profile with explicit rollout defaults, operational playbooks, and a narrow first live use case.
@@ -114,7 +114,7 @@ Slices:
 - Slice 1: soak, load, and recovery validation - completed
 - Slice 2: rollout defaults and deployment profile - completed
 - Slice 3: operator governance and maintenance playbooks - completed
-- Slice 4: first production path and release criteria - planned
+- Slice 4: first production path and release criteria - completed
 
 Acceptance criteria:
 

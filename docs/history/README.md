@@ -12,7 +12,8 @@ Available snapshots:
 - `v0.7.md`
 - `v0.8.md`
 - `v0.9.md`
+- `v1.0.md`
 
-Latest archived milestone: `v0.9`
+Latest archived milestone: `v1.0`
 
-That `v0.9` snapshot is the baseline archive for the active `v1.0` trusted-runtime milestone.
+That `v1.0` snapshot is the baseline archive for the active `v1.1` assistant-surface milestone.

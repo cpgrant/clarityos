@@ -71,7 +71,7 @@ from runtime.worker import (
 from runtime.workflow import WORKFLOW_DIR, WORKFLOW_STATE_SCHEMA, workflow_path
 from runtime.workflow_runner import replay_workflow, resume_workflow, safe_resume_workflow, start_child_workflow, start_workflow
 
-app = FastAPI(title="ClarityOS", version="0.9.0")
+app = FastAPI(title="ClarityOS", version="1.0.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
 

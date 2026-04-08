@@ -4,9 +4,9 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v0.9`
-- Current focus: `v1.0` trusted runtime
-- Next target: `v1.0` slice 4 first production path and release criteria
+- Current release: `v1.0`
+- Current focus: `v1.1` first assistant surface and session gateway
+- Next target: `v1.1` slice 1 session and conversation model
 
 Direction after `v1.0`: `v1.1` becomes the first assistant-surface milestone, with a web-first session gateway and operator UI on top of the existing runtime.
 
@@ -16,7 +16,7 @@ Direction after `v1.0`: `v1.1` becomes the first assistant-surface milestone, wi
 
 `v0.9` completes state versioning and migrations, operator recovery and pruning controls, incident-correlation observability, operator auth, production policy hardening, and restart/partial-failure validation.
 
-`v1.0` now starts the trusted-runtime layer with repeatable release validation drills, env-selectable production config profiles, and operator playbooks for maintenance and incident response.
+`v1.0` completes the trusted-runtime layer with repeatable release validation drills, env-selectable production config profiles, operator playbooks, and an explicit first production path with measurable release gates.
 
 ## Historical Docs
 
@@ -28,6 +28,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v0.7.md`
 - `docs/history/v0.8.md`
 - `docs/history/v0.9.md`
+- `docs/history/v1.0.md`
 
 ## What It Does
 
@@ -74,7 +75,8 @@ clarityos/
 │       ├── v0.6.md
 │       ├── v0.7.md
 │       ├── v0.8.md
-│       └── v0.9.md
+│       ├── v0.9.md
+│       └── v1.0.md
 ├── memories/
 ├── jobs/
 ├── workers/
@@ -359,7 +361,7 @@ curl http://127.0.0.1:8000/queue/health \
 - Persisted runtime state lives under `workflows/`, `jobs/`, `workers/`, `memories/`, `artifacts/`, `approvals/`, and `logs/`; treat those directories as operational data.
 - In production, set `CLARITYOS_OPERATOR_TOKEN` and terminate TLS in front of the API so operator headers are not exposed in plaintext.
 - Set `CLARITYOS_ENV=production` in deployed environments so policy validation rejects broad unsafe capability rules and surprise agent-level overrides.
-- Retention is still operator-managed in `v0.9`: use queue prune and state migration endpoints deliberately, and back up persisted state before destructive maintenance.
+- Retention is still operator-managed in `v1.0`: use queue prune and state migration endpoints deliberately, and back up persisted state before destructive maintenance.
 - Restart and partial-failure validation now covers persisted incident summaries, workflow recovery, and safe retry resume paths; deeper soak/load testing is still future work.
 - The current trusted-runtime profile is documented in `docs/production-profile.md`.
 - The first supported `v1.0` production use case and release gates are documented in `docs/v1.0-release-path.md`.
@@ -1025,7 +1027,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Failures in one child workflow do not silently corrupt sibling or parent workflow state.
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
-`v0.9` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.0` trusted runtime, with validation, rollout defaults, operator playbooks, and a narrow first production path.
+`v1.0` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.1` first assistant surface and session gateway, starting with the session and conversation model.
 
 ### `v0.9` Acceptance Criteria
 
@@ -1049,6 +1051,8 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - bounded default/researcher-style agent execution
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
+
+`v1.0` is the current release. The next planned milestone is `v1.1`, which adds the first user-facing assistant surface on top of this trusted-runtime core.
 
 ### `v1.1` Acceptance Criteria
 
