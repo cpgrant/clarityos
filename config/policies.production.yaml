@@ -1,0 +1,41 @@
+policies:
+  safe_production:
+    allow:
+      - capability: model_call
+      - capability: file_read
+        paths:
+          - "README.md"
+          - "docs/**"
+          - "config/**"
+          - "runtime/**"
+          - "tests/**"
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: exec
+      - capability: memory_read
+      - capability: memory_write
+
+  memory_production:
+    allow:
+      - capability: model_call
+      - capability: memory_read
+        scope_kinds:
+          - global
+          - agent
+          - workflow
+          - run
+      - capability: memory_write
+        memory_types:
+          - fact
+          - summary
+          - observation
+          - artifact_ref
+        scope_kinds:
+          - agent
+          - workflow
+          - run
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: exec

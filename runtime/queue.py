@@ -805,7 +805,7 @@ def queue_health_summary() -> dict[str, Any]:
                     "event_type": "dead_letter",
                     "job_id": job["job_id"],
                     "timestamp": job.get("dead_lettered_at") or job["updated_at"],
-                    "message": job.get("error", {}).get("message"),
+                    "message": (job.get("error") or {}).get("message"),
                 }
             )
         elif job["status"] == "failed":
@@ -814,7 +814,7 @@ def queue_health_summary() -> dict[str, Any]:
                     "event_type": "failed",
                     "job_id": job["job_id"],
                     "timestamp": job.get("last_failure_at") or job["updated_at"],
-                    "message": job.get("error", {}).get("message"),
+                    "message": (job.get("error") or {}).get("message"),
                 }
             )
         elif job["status"] == "scheduled" and job.get("attempt_count", 0) > 0:

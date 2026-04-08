@@ -5,14 +5,18 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 ## Status
 
 - Current release: `v0.9`
-- Current focus: `v1.0` release readiness
-- Next target: `v1.0` slice 1 soak, load, and recovery validation
+- Current focus: `v1.0` trusted runtime
+- Next target: `v1.0` slice 4 first production path and release criteria
+
+Direction after `v1.0`: `v1.1` becomes the first assistant-surface milestone, with a web-first session gateway and operator UI on top of the existing runtime.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
 `v0.8` completes bounded delegation, child workflow lineage, explicit child role metadata, scoped shared-memory handoff, and operator-facing failure inspection.
 
 `v0.9` completes state versioning and migrations, operator recovery and pruning controls, incident-correlation observability, operator auth, production policy hardening, and restart/partial-failure validation.
+
+`v1.0` now starts the trusted-runtime layer with repeatable release validation drills, env-selectable production config profiles, and operator playbooks for maintenance and incident response.
 
 ## Historical Docs
 
@@ -50,9 +54,19 @@ clarityos/
 ├── api/
 │   └── main.py
 ├── docs/
+│   ├── playbooks/
+│   │   ├── README.md
+│   │   ├── incident-response.md
+│   │   ├── migration.md
+│   │   ├── queue-cleanup.md
+│   │   ├── worker-repair.md
+│   │   └── workflow-recovery.md
+│   ├── production-profile.md
 │   ├── roadmap.md
 │   ├── v0.9-checklist.md
 │   ├── v1.0-checklist.md
+│   ├── v1.0-release-path.md
+│   ├── v1.1-checklist.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
@@ -66,7 +80,9 @@ clarityos/
 ├── workers/
 ├── config/
 │   ├── agents.yaml
+│   ├── agents.production.yaml
 │   ├── models.yaml
+│   ├── policies.production.yaml
 │   └── policies.yaml
 ├── logs/
 ├── runtime/
@@ -90,15 +106,18 @@ clarityos/
 │   └── workflow_runner.py
 ├── workflows/
 ├── scripts/
+│   ├── run_release_validation.sh
 │   └── show_latest_log.sh
 ├── tests/
 │   ├── test_agent.py
 │   ├── test_api.py
 │   ├── test_control_plane.py
 │   ├── test_memory.py
+│   ├── test_model.py
 │   ├── test_persistence_versions.py
 │   ├── test_policy.py
 │   ├── test_queue.py
+│   ├── test_release_validation.py
 │   ├── test_resilience.py
 │   ├── test_worker.py
 │   ├── test_workflow.py
@@ -155,6 +174,19 @@ In production mode, policies must explicitly deny `file_write` and `http`, and d
 export CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES=1
 ```
 
+To use the shipped production-oriented config examples without overwriting local development files:
+
+```bash
+export CLARITYOS_AGENTS_CONFIG=config/agents.production.yaml
+export CLARITYOS_POLICIES_CONFIG=config/policies.production.yaml
+```
+
+If you want a separate model catalog for production, you can also point the runtime at a different models file:
+
+```bash
+export CLARITYOS_MODELS_CONFIG=config/models.yaml
+```
+
 ## Run
 
 ```bash
@@ -168,6 +200,39 @@ API base URL:
 http://127.0.0.1:8000
 ```
 
+## Release Validation
+
+For `v1.0` trusted-runtime checks, run the targeted recovery and resilience drills:
+
+```bash
+scripts/run_release_validation.sh
+```
+
+To run the targeted drills and then the full unit suite:
+
+```bash
+scripts/run_release_validation.sh --full
+```
+
+This validation path is intentionally narrower than a future soak/load harness. It is the first repeatable pre-release gate for:
+
+- persisted recovery and replay drills
+- expired-lease reclaim behavior
+- retry-wait safe resume behavior
+- batched queue and worker completion flows
+
+## First Production Path
+
+`v1.0` is not a chat product or multi-channel assistant release. The first supported production path is narrower:
+
+- single-tenant
+- self-hosted
+- API-first
+- queue-backed durable workflow execution
+- operator-managed recovery and inspection
+
+In other words, `v1.0` targets a trusted internal runtime for bounded assistant and research tasks started through workflow and job APIs. The full definition and release gates live in `docs/v1.0-release-path.md`.
+
 ## API
 
 Health check:
@@ -180,6 +245,13 @@ Operator auth status:
 
 ```bash
 curl http://127.0.0.1:8000/operator/auth
+```
+
+Operator runtime profile:
+
+```bash
+curl http://127.0.0.1:8000/operator/profile \
+  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
 ```
 
 Start a workflow with the default agent:
@@ -289,6 +361,9 @@ curl http://127.0.0.1:8000/queue/health \
 - Set `CLARITYOS_ENV=production` in deployed environments so policy validation rejects broad unsafe capability rules and surprise agent-level overrides.
 - Retention is still operator-managed in `v0.9`: use queue prune and state migration endpoints deliberately, and back up persisted state before destructive maintenance.
 - Restart and partial-failure validation now covers persisted incident summaries, workflow recovery, and safe retry resume paths; deeper soak/load testing is still future work.
+- The current trusted-runtime profile is documented in `docs/production-profile.md`.
+- The first supported `v1.0` production use case and release gates are documented in `docs/v1.0-release-path.md`.
+- Maintenance and incident procedures are documented in `docs/playbooks/README.md`.
 
 Request an approval-gated tool run:
 
@@ -930,6 +1005,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 10. `v0.8` - multi-agent coordination
 11. `v0.9` - production hardening
 12. `v1.0` - release readiness and first production profile
+13. `v1.1` - first assistant surface and session gateway
 
 ### `v0.7` Acceptance Criteria
 
@@ -949,7 +1025,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Failures in one child workflow do not silently corrupt sibling or parent workflow state.
 - Automated tests cover delegation, lineage, scoped memory access, and failure isolation.
 
-`v0.9` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.0` release readiness, starting with soak/load/recovery validation and rollout defaults.
+`v0.9` is complete. The next planned milestone lives in `docs/roadmap.md` and is `v1.0` trusted runtime, with validation, rollout defaults, operator playbooks, and a narrow first production path.
 
 ### `v0.9` Acceptance Criteria
 
@@ -966,3 +1042,17 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Recovery, retry, reclaim, and restart behavior are validated through repeatable load and failure drills beyond unit coverage.
 - Operators have compact incident summaries, safe maintenance flows, and a documented operational playbook.
 - Release criteria for the first real production use case are defined, measurable, and documented.
+
+`v1.0` first production path:
+
+- API-first, self-hosted, single-tenant workflow runtime
+- bounded default/researcher-style agent execution
+- queue/worker-backed async execution with operator recovery
+- no assistant UI, multi-channel surface, or plugin ecosystem yet
+
+### `v1.1` Acceptance Criteria
+
+- ClarityOS supports explicit user conversation/session records that map into workflows, memory, and operator-visible history.
+- A first assistant surface exists, ideally web-first, that uses the existing runtime instead of introducing a second execution path.
+- Operators can inspect live conversations, related workflows, and recovery actions through a simple UI.
+- Any first channel adapter remains thin and transport-focused, with workflow, queue, memory, and recovery behavior still owned by the runtime core.

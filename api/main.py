@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 
+from runtime.agent import AGENTS_CONFIG_ENV_VAR, agents_config_path
 from runtime.artifact import ARTIFACT_DIR, ARTIFACT_STATE_SCHEMA, artifact_path, load_artifact
 from runtime.approval import APPROVAL_DIR, APPROVAL_STATE_SCHEMA, abort_approval, approval_path, approve_approval, deny_approval, get_approval
 from runtime.control_plane import (
@@ -22,6 +23,16 @@ from runtime.errors import (
     PolicyDeniedError,
 )
 from runtime.memory import MEMORY_DIR, MEMORY_STATE_SCHEMA, delete_memory, list_memories, load_memory, memory_path
+from runtime.model import MODELS_CONFIG_ENV_VAR, models_config_path
+from runtime.policy import (
+    ALLOW_POLICY_OVERRIDES_ENV_VAR,
+    POLICIES_CONFIG_ENV_VAR,
+    PRODUCTION_ENV_VAR,
+    allow_agent_policy_overrides,
+    policies_config_path,
+    production_mode_enabled,
+    runtime_environment,
+)
 from runtime.queue import (
     JOB_DIR,
     JOB_STATE_SCHEMA,
@@ -75,6 +86,17 @@ def operator_auth():
     return operator_auth_status()
 
 
+@app.get("/operator/profile")
+def operator_profile(
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return operator_profile_status()
+    except Exception as exc:
+        return error_response(exc)
+
+
 def error_status_code(exc: Exception) -> int:
     if isinstance(exc, FileNotFoundError):
         return 404
@@ -114,6 +136,48 @@ def operator_auth_status() -> dict[str, object]:
         "enabled": operator_auth_enabled(),
         "header": OPERATOR_AUTH_HEADER,
         "env_var": OPERATOR_TOKEN_ENV_VAR,
+    }
+
+
+def operator_profile_status() -> dict[str, object]:
+    return {
+        "environment": {
+            "name": runtime_environment(),
+            "production_mode": production_mode_enabled(),
+        },
+        "operator_auth": operator_auth_status(),
+        "policy": {
+            "allow_agent_overrides": allow_agent_policy_overrides(),
+            "env_vars": {
+                "runtime_environment": PRODUCTION_ENV_VAR,
+                "allow_agent_policy_overrides": ALLOW_POLICY_OVERRIDES_ENV_VAR,
+            },
+        },
+        "config": {
+            "agents": {
+                "path": str(agents_config_path()),
+                "env_var": AGENTS_CONFIG_ENV_VAR,
+            },
+            "policies": {
+                "path": str(policies_config_path()),
+                "env_var": POLICIES_CONFIG_ENV_VAR,
+            },
+            "models": {
+                "path": str(models_config_path()),
+                "env_var": MODELS_CONFIG_ENV_VAR,
+            },
+        },
+        "state": {
+            "current_version": PERSISTED_STATE_VERSION,
+            "directories": {
+                "workflows": str(WORKFLOW_DIR),
+                "jobs": str(JOB_DIR),
+                "workers": str(WORKER_DIR),
+                "memories": str(MEMORY_DIR),
+                "artifacts": str(ARTIFACT_DIR),
+                "approvals": str(APPROVAL_DIR),
+            },
+        },
     }
 
 

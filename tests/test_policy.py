@@ -49,6 +49,31 @@ policies:
         self.assertEqual(loaded["name"], "safe_readonly")
         self.assertEqual(loaded["allow"][1]["commands"], ["echo"])
 
+    def test_load_policy_respects_env_config_override(self) -> None:
+        override_config = self.root_dir / "policies.override.yaml"
+        override_config.write_text(
+            """
+policies:
+  override:
+    allow:
+      - capability: model_call
+    deny:
+      - capability: file_write
+      - capability: http
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(
+            policy.os.environ,
+            {"CLARITYOS_POLICIES_CONFIG": str(override_config)},
+            clear=True,
+        ):
+            loaded = policy.load_policy("override")
+
+        self.assertEqual(loaded["name"], "override")
+
     def test_load_policy_rejects_production_exec_wildcard(self) -> None:
         self.write_policies(
             """

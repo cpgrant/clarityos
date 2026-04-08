@@ -11,12 +11,20 @@ DEBUG = os.getenv("CLARITY_DEBUG", "false").lower() == "true"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODELS_CONFIG_PATH = BASE_DIR / "config" / "models.yaml"
+MODELS_CONFIG_ENV_VAR = "CLARITYOS_MODELS_CONFIG"
 
 openai_client = OpenAI()
 
 
+def models_config_path() -> Path:
+    configured = os.getenv(MODELS_CONFIG_ENV_VAR)
+    if isinstance(configured, str) and configured.strip():
+        return Path(configured.strip())
+    return MODELS_CONFIG_PATH
+
+
 def load_model_config(name: str) -> dict:
-    with MODELS_CONFIG_PATH.open() as file:
+    with models_config_path().open() as file:
         data = yaml.safe_load(file) or {}
 
     models = data.get("models", {})

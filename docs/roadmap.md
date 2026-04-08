@@ -8,7 +8,7 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 - Latest completed milestone: `v0.9`
 - Next planned milestone: `v1.0`
-- Next planned slice: `v1.0` slice 1 soak, load, and recovery validation
+- Next planned slice: `v1.0` slice 4 first production path and release criteria
 
 ## Milestones
 
@@ -111,9 +111,9 @@ Translate the hardened runtime into a repeatable, supportable production profile
 
 Slices:
 
-- Slice 1: soak, load, and recovery validation - planned
-- Slice 2: rollout defaults and deployment profile - planned
-- Slice 3: operator governance and maintenance playbooks - planned
+- Slice 1: soak, load, and recovery validation - completed
+- Slice 2: rollout defaults and deployment profile - completed
+- Slice 3: operator governance and maintenance playbooks - completed
 - Slice 4: first production path and release criteria - planned
 
 Acceptance criteria:
@@ -122,3 +122,40 @@ Acceptance criteria:
 - A production deployment profile exists with explicit env defaults, policy posture, retention guidance, and operator expectations.
 - Operators have documented playbooks for incident response, safe maintenance, migration, recovery, and pruning.
 - The first production use case is intentionally narrow, measurable, and supported by release gates rather than informal judgment.
+
+First production use case:
+
+- single-tenant, self-hosted, API-first workflow runtime
+- bounded assistant and researcher-style tasks started through workflow and job APIs
+- operator-managed recovery, replay, prune, and inspection flows
+- no chat surface, plugin marketplace, or many-channel product scope yet
+
+Release gates:
+
+- targeted trusted-runtime drills pass
+- full unit suite passes
+- production env, operator auth, and explicit config selection are in place
+- operator profile confirms the intended runtime posture
+- queue and worker health start clean on release candidates
+- documented playbooks map directly to real operator endpoints
+
+13. `v1.1` - first assistant surface and session gateway
+Status: planned
+
+Goal:
+Deliver the first real “OpenClaw-ish” use case on top of the hardened runtime: one assistant surface, one explicit session model, and one thin operator-facing UI, while preserving ClarityOS’s stronger guarantees and bounded execution model.
+
+Slices:
+
+- Slice 1: session and conversation model - planned
+- Slice 2: first assistant surface - planned
+- Slice 3: operator UI and conversation inspection - planned
+- Slice 4: first external channel or gateway adapter - planned
+
+Acceptance criteria:
+
+- The runtime supports explicit conversation/session records that map inbound user interactions to workflows, memory scope, and operator-visible history.
+- A first assistant surface exists, ideally web-first, that can send user messages into the runtime and receive async workflow-backed responses.
+- Operators can inspect sessions, related workflows, incidents, and recovery actions through a simple UI rather than API-only access.
+- Channel integration remains thin: surface adapters hand work to the existing workflow, queue, memory, and control-plane layers rather than duplicating runtime logic.
+- The shipped use case is intentionally narrow and reliable, with one strong surface before broader channel expansion.

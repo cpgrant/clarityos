@@ -1,4 +1,4 @@
-# Slice 4 uses stdlib auth/observability helpers, so no extra runtime deps are required yet.
+# v1.0 trusted-runtime profile still uses stdlib auth/config helpers, so no extra runtime deps are required yet.
 fastapi
 uvicorn
 pyyaml

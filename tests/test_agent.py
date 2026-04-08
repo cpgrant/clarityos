@@ -285,6 +285,31 @@ policies:
         with log_files[-1].open(encoding="utf-8") as file:
             return json.load(file)
 
+    def test_load_agent_respects_env_config_override(self) -> None:
+        override_config = self.root_dir / "agents.override.yaml"
+        override_config.write_text(
+            """
+agents:
+  override:
+    system: "Override agent"
+    model: fast
+    policy: safe_readonly
+    budgets:
+      max_steps: 1
+      max_tool_calls: 0
+      max_tokens: 100
+      max_wall_clock_ms: 1000
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(agent.os.environ, {"CLARITYOS_AGENTS_CONFIG": str(override_config)}, clear=True):
+            loaded = agent.load_agent("override")
+
+        self.assertEqual(loaded["system"], "Override agent")
+        self.assertEqual(loaded["budgets"]["max_steps"], 1)
+
     @patch.object(agent, "call_model", side_effect=fake_model)
     def test_run_agent_success(self, _mock_call_model) -> None:
         result = agent.run_agent("hello", "default")

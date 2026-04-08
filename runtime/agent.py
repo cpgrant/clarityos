@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -48,6 +49,7 @@ from runtime.workflow import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 AGENTS_CONFIG_PATH = BASE_DIR / "config" / "agents.yaml"
+AGENTS_CONFIG_ENV_VAR = "CLARITYOS_AGENTS_CONFIG"
 
 
 @dataclass
@@ -95,8 +97,15 @@ class RunState:
     )
 
 
+def agents_config_path() -> Path:
+    configured = os.getenv(AGENTS_CONFIG_ENV_VAR)
+    if isinstance(configured, str) and configured.strip():
+        return Path(configured.strip())
+    return AGENTS_CONFIG_PATH
+
+
 def load_agent(agent_name: str) -> dict:
-    with AGENTS_CONFIG_PATH.open() as file:
+    with agents_config_path().open() as file:
         data = yaml.safe_load(file) or {}
 
     agents = data.get("agents", {})

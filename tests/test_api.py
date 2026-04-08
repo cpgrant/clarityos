@@ -1,5 +1,6 @@
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import api.main as main
@@ -19,6 +20,32 @@ class ApiTests(unittest.TestCase):
                 "env_var": "CLARITYOS_OPERATOR_TOKEN",
             },
         )
+
+    @patch.object(main, "models_config_path", return_value=Path("/tmp/models.production.yaml"))
+    @patch.object(main, "policies_config_path", return_value=Path("/tmp/policies.production.yaml"))
+    @patch.object(main, "agents_config_path", return_value=Path("/tmp/agents.production.yaml"))
+    def test_operator_profile_reports_runtime_posture(
+        self,
+        _mock_agents_config_path,
+        _mock_policies_config_path,
+        _mock_models_config_path,
+    ) -> None:
+        with patch.dict(
+            main.os.environ,
+            {
+                "CLARITYOS_ENV": "production",
+                "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+            },
+            clear=True,
+        ):
+            response = main.operator_profile_status()
+
+        self.assertEqual(response["environment"]["name"], "production")
+        self.assertTrue(response["environment"]["production_mode"])
+        self.assertTrue(response["policy"]["allow_agent_overrides"])
+        self.assertEqual(response["config"]["agents"]["path"], "/tmp/agents.production.yaml")
+        self.assertEqual(response["config"]["policies"]["env_var"], "CLARITYOS_POLICIES_CONFIG")
+        self.assertEqual(response["state"]["current_version"], "v0.9")
 
     @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
     def test_operator_endpoint_requires_token_when_configured(self, _mock_queue_health_view) -> None:

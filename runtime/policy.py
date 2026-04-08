@@ -10,6 +10,7 @@ from runtime.errors import PolicyDeniedError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 POLICIES_CONFIG_PATH = BASE_DIR / "config" / "policies.yaml"
+POLICIES_CONFIG_ENV_VAR = "CLARITYOS_POLICIES_CONFIG"
 PRODUCTION_ENV_VAR = "CLARITYOS_ENV"
 ALLOW_POLICY_OVERRIDES_ENV_VAR = "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES"
 CAPABILITY_CLASSES = {
@@ -64,6 +65,13 @@ def env_flag_enabled(name: str) -> bool:
 
 def allow_agent_policy_overrides() -> bool:
     return env_flag_enabled(ALLOW_POLICY_OVERRIDES_ENV_VAR)
+
+
+def policies_config_path() -> Path:
+    configured = os.getenv(POLICIES_CONFIG_ENV_VAR)
+    if isinstance(configured, str) and configured.strip():
+        return Path(configured.strip())
+    return POLICIES_CONFIG_PATH
 
 
 def normalize_rule_list(value: object, *, field_name: str) -> list[dict]:
@@ -147,7 +155,7 @@ def validate_policy_rules(policy_name: str, policy: dict) -> dict:
 
 
 def load_policies() -> dict:
-    with POLICIES_CONFIG_PATH.open() as file:
+    with policies_config_path().open() as file:
         data = yaml.safe_load(file) or {}
 
     return data.get("policies", {})

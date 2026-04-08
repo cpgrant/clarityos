@@ -1,0 +1,42 @@
+agents:
+  default:
+    system: "You are a helpful assistant"
+    model: fast
+    policy: safe_production
+    budgets:
+      max_steps: 3
+      max_tool_calls: 1
+      max_tokens: 3000
+      max_wall_clock_ms: 20000
+    subruns:
+      max_children: 0
+      max_depth: 0
+      allowed_agents: []
+      allowed_capabilities: []
+      allowed_tools: []
+    tools: []
+
+  researcher:
+    system: "You provide precise, structured answers"
+    model: smart
+    policy: safe_production
+    budgets:
+      max_steps: 3
+      max_tool_calls: 1
+      max_tokens: 3000
+      max_wall_clock_ms: 20000
+    tools:
+      - read_file
+
+  memory_operator:
+    system: "You manage explicit memory records and retrieval results"
+    model: fast
+    policy: memory_production
+    budgets:
+      max_steps: 3
+      max_tool_calls: 2
+      max_tokens: 3000
+      max_wall_clock_ms: 20000
+    tools:
+      - memory_write
+      - memory_query

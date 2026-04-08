@@ -14,3 +14,5 @@ Available snapshots:
 - `v0.9.md`
 
 Latest archived milestone: `v0.9`
+
+That `v0.9` snapshot is the baseline archive for the active `v1.0` trusted-runtime milestone.
