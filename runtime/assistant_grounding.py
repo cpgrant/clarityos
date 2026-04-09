@@ -12,6 +12,7 @@ from runtime.tools import get_tool_definition
 BASE_DIR = Path(__file__).resolve().parent.parent
 README_PATH = BASE_DIR / "README.md"
 ROADMAP_PATH = BASE_DIR / "docs" / "roadmap.md"
+HISTORY_DIR = BASE_DIR / "docs" / "history"
 GROUNDING_SURFACES = {"assistant_web", "embed_widget"}
 PROJECT_KEYWORDS = {
     "clarityos",
@@ -99,6 +100,16 @@ PLANNING_KEYWORDS = {
     "release",
     "v1.",
 }
+SUMMARY_KEYWORDS = {
+    "summarize",
+    "summary",
+    "summarise",
+    "briefly",
+    "what did",
+    "what changed",
+    "what improved",
+    "what was accomplished",
+}
 STATUS_KEYWORDS = {
     "where are we",
     "current",
@@ -111,6 +122,7 @@ STATUS_KEYWORDS = {
 UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
 )
+VERSION_PATTERN = re.compile(r"\bv\d+\.\d+(?:\.\d+)?\b", flags=re.IGNORECASE)
 RUNTIME_KEYWORDS = {
     "workflow",
     "workflows",
@@ -226,22 +238,82 @@ def repo_grounding_context() -> list[dict[str, str]]:
     ]
 
 
+def extract_markdown_section(path: Path, heading: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    collected: list[str] = []
+    in_section = False
+    heading_line = f"## {heading}"
+    for line in lines:
+        if line.startswith(heading_line):
+            in_section = True
+            continue
+        if in_section and line.startswith("## "):
+            break
+        if in_section and line.strip():
+            collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def mentioned_versions(user_input: str) -> list[str]:
+    seen: list[str] = []
+    for match in VERSION_PATTERN.findall(user_input):
+        version = match.lower()
+        if version not in seen:
+            seen.append(version)
+    return seen
+
+
+def milestone_history_context(user_input: str) -> list[dict[str, str]]:
+    context: list[dict[str, str]] = []
+    modes = question_modes(user_input)
+    for version in mentioned_versions(user_input)[:2]:
+        history_path = HISTORY_DIR / f"{version}.md"
+        if not history_path.exists():
+            continue
+        added = extract_markdown_section(history_path, f"What {version} Added")
+        if added:
+            context.append(
+                {
+                    "title": f"{version} shipped changes",
+                    "source": f"docs/history/{version}.md",
+                    "content": added,
+                }
+            )
+        if "summary" in modes or "status" in modes:
+            supported = extract_markdown_section(history_path, "Supported Shape")
+            if supported:
+                context.append(
+                    {
+                        "title": f"{version} supported shape",
+                        "source": f"docs/history/{version}.md#supported-shape",
+                        "content": supported,
+                    }
+                )
+    return context
+
+
 def answer_guidance(user_input: str) -> str:
     lowered = user_input.lower()
-    if any(keyword in lowered for keyword in STRUCTURED_KEYWORDS):
+    modes = question_modes(user_input)
+    if modes or any(keyword in lowered for keyword in STRUCTURED_KEYWORDS):
         return (
             "Ground the answer in the supplied project context and avoid generic software advice. "
-            "Prefer short structured sections or bullets. When relevant, cover current state, "
-            "gaps, and the next recommendation. If the supplied context is insufficient, say what is missing."
+            "Prefer short structured sections or bullets. Name concrete shipped changes instead of abstract themes. "
+            "Answer the question that was asked, and do not jump to future milestones unless the user asked for them. "
+            "When relevant, cover current state, gaps, and the next recommendation. If the supplied context is insufficient, say what is missing."
         )
     return (
-        "Ground the answer in the supplied project context, keep it concise, and avoid generic unsupported claims."
+        "Ground the answer in the supplied project context, keep it concise, answer the asked question directly, "
+        "and avoid generic unsupported claims."
     )
 
 
 def question_modes(user_input: str) -> set[str]:
     lowered = user_input.lower()
     modes: set[str] = set()
+    if any(keyword in lowered for keyword in SUMMARY_KEYWORDS):
+        modes.add("summary")
     if any(keyword in lowered for keyword in COMPARISON_KEYWORDS):
         modes.add("comparison")
     if any(keyword in lowered for keyword in PLANNING_KEYWORDS):
@@ -273,6 +345,14 @@ def answer_structure_hint(user_input: str) -> dict[str, str] | None:
             "- Similarities: where the systems are meaningfully alike\n"
             "- Gaps: what ClarityOS still lacks or does differently\n"
             "- Recommendation: what to prioritize next"
+        )
+    elif "summary" in modes:
+        content = (
+            "Use this answer shape:\n"
+            "- Bottom line: one sentence on what changed\n"
+            "- Concrete improvements: 3 to 5 specific shipped changes\n"
+            "- User-visible impact: why those changes matter in practice\n"
+            "- Keep the answer on the asked milestone unless future milestones were explicitly requested"
         )
     elif "plan" in modes:
         content = (
@@ -560,6 +640,12 @@ def build_grounding_summary(user_input: str, context: list[dict[str, str]]) -> d
             "Use the evidence below to support a comparison-focused answer. Start with the bottom line, "
             "then name the strongest similarities, then the biggest gaps, then the next recommendation."
         )
+    elif "summary" in modes:
+        guidance = (
+            "Use the evidence below to support a concrete summary. Start with the bottom line, "
+            "then name the shipped changes directly from the evidence, then explain the practical impact. "
+            "Do not drift into future milestones unless the user asked for them."
+        )
     elif "plan" in modes:
         guidance = (
             "Use the evidence below to support a plan-focused answer. Start with the objective and current state, "
@@ -591,6 +677,7 @@ def build_assistant_prompt_context(
         return []
 
     context = [dict(entry) for entry in repo_grounding_context()]
+    context.extend(milestone_history_context(user_input))
     context.extend(runtime_identifier_context(agent_name, user_input))
     context.extend(tool_guided_context(agent_name, user_input))
     context.extend(external_fetch_context(agent_name, user_input))

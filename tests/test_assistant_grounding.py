@@ -150,6 +150,32 @@ class AssistantGroundingTests(unittest.TestCase):
         self.assertIn("Next slices", structure["content"])
 
     @patch("runtime.assistant_grounding.guarded_tool_call")
+    def test_build_assistant_prompt_context_adds_summary_structure_for_summary_question(self, mock_guarded_tool_call) -> None:
+        def fake_tool_call(agent_name: str, name: str, args: dict | None = None) -> dict | None:
+            self.assertEqual(agent_name, "researcher")
+            if name == "search_files":
+                return {"ok": True, "output": {"value": {"hits": []}}}
+            if name == "fetch_url":
+                return None
+            raise AssertionError(f"Unexpected tool: {name}")
+
+        mock_guarded_tool_call.side_effect = fake_tool_call
+
+        context = build_assistant_prompt_context(
+            surface="assistant_web",
+            user_input="Summarize what v1.4 improved in ClarityOS.",
+            agent_name="researcher",
+        )
+
+        structure = next(entry for entry in context if entry["source"] == "answer_structure")
+        self.assertIn("Concrete improvements", structure["content"])
+        guidance = next(entry for entry in context if entry["source"] == "assistant_profile")
+        self.assertIn("do not jump to future milestones", guidance["content"])
+        self.assertTrue(any(entry["source"] == "docs/history/v1.4.md" for entry in context))
+        milestone = next(entry for entry in context if entry["source"] == "docs/history/v1.4.md")
+        self.assertIn("explicit domain-split tool layer", milestone["content"])
+
+    @patch("runtime.assistant_grounding.guarded_tool_call")
     def test_build_assistant_prompt_context_skips_tools_for_non_project_question(self, mock_guarded_tool_call) -> None:
         context = build_assistant_prompt_context(
             surface="assistant_web",

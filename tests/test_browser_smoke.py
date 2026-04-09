@@ -107,7 +107,7 @@ class BrowserSmokeTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = self.response_text(response)
-        self.assertIn("Web-First Assistant", body)
+        self.assertIn("Browser-First Assistant", body)
         self.assertIn('id="message-input"', body)
         self.assertIn('id="send-button"', body)
 
