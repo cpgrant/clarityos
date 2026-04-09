@@ -377,6 +377,9 @@ def guarded_tool_call(agent_name: str, tool_name: str, tool_args: dict) -> dict 
 
 
 def summarize_session_inspection(view: dict) -> str:
+    summary = view.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary
     session_info = view.get("session", {})
     workflow = view.get("current_workflow") or {}
     continuity = view.get("continuity") or {}
@@ -395,6 +398,9 @@ def summarize_session_inspection(view: dict) -> str:
 
 
 def summarize_workflow_inspection(view: dict) -> str:
+    summary = view.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary
     workflow = view.get("workflow", {})
     current_step = view.get("current_step") or {}
     incident = view.get("incident") or {}
@@ -458,7 +464,9 @@ def external_fetch_context(agent_name: str, user_input: str) -> list[dict[str, s
             {
                 "title": f"Fetched external reference for `{keyword}`",
                 "source": value.get("url", url),
-                "content": normalize_excerpt_content(str(value.get("content", ""))),
+                "content": normalize_excerpt_content(
+                    str(value.get("summary") or value.get("content_preview") or value.get("content", ""))
+                ),
             }
         )
     return context
@@ -510,9 +518,10 @@ def tool_guided_context(agent_name: str, user_input: str) -> list[dict[str, str]
                 content = normalize_excerpt_content(str(excerpt.get("content", "")))
                 if not content:
                     continue
+                header = hit.get("match_preview") or hit.get("line") or term
                 excerpts.append(
                     {
-                        "title": f"Relevant excerpt for `{term}`",
+                        "title": f"Relevant excerpt for `{header}`",
                         "source": f"{path}:{excerpt['start_line']}-{excerpt['end_line']}",
                         "content": content,
                     }

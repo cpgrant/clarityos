@@ -14,6 +14,7 @@ policies:
       - capability: file_write
       - capability: http
       - capability: exec
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -36,6 +37,7 @@ policies:
     deny:
       - capability: file_write
       - capability: exec
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -62,3 +64,24 @@ policies:
       - capability: file_write
       - capability: http
       - capability: exec
+      - capability: runtime_write
+
+  runtime_maintenance_production:
+    allow:
+      - capability: runtime_read
+      - capability: runtime_write
+        commands:
+          - archive_session
+          - prune_sessions
+          - promote_ready_jobs
+          - repair_stale_jobs
+          - repair_orphaned_workers
+          - safe_resume_workflow
+          - replay_workflow
+          - recover_workflow
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: exec
+      - capability: memory_read
+      - capability: memory_write

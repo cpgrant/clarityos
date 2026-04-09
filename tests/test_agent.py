@@ -13,6 +13,7 @@ import runtime.memory as memory
 import runtime.policy as policy
 import runtime.queue as queue
 import runtime.session as session
+import runtime.tool_support as tool_support
 import runtime.trace as trace
 import runtime.tools as tools
 import runtime.worker as worker
@@ -79,6 +80,7 @@ agents:
       - get_time
       - read_file
       - list_files
+      - list_directory
       - read_file_range
       - search_files
       - inspect_session
@@ -99,6 +101,7 @@ agents:
       - get_time
       - read_file
       - list_files
+      - list_directory
       - read_file_range
       - search_files
       - fetch_url
@@ -106,6 +109,29 @@ agents:
       - inspect_workflow
       - inspect_queue
       - inspect_worker
+
+  maintenance_operator:
+    system: "You run narrow maintenance actions"
+    model: fast
+    policy: runtime_maintenance
+    budgets:
+      max_steps: 4
+      max_tool_calls: 3
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
+      - archive_session
+      - prune_sessions
+      - promote_ready_jobs
+      - repair_stale_jobs
+      - repair_orphaned_workers
+      - safe_resume_workflow
+      - replay_workflow
+      - recover_workflow
 
   memory_tool:
     system: "You manage explicit memory operations"
@@ -225,6 +251,7 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -245,6 +272,7 @@ policies:
           - platform.openai.com
     deny:
       - capability: file_write
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -267,6 +295,26 @@ policies:
         paths:
           - "**"
       - capability: runtime_read
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: runtime_write
+      - capability: memory_read
+      - capability: memory_write
+
+  runtime_maintenance:
+    allow:
+      - capability: runtime_read
+      - capability: runtime_write
+        commands:
+          - archive_session
+          - prune_sessions
+          - promote_ready_jobs
+          - repair_stale_jobs
+          - repair_orphaned_workers
+          - safe_resume_workflow
+          - replay_workflow
+          - recover_workflow
     deny:
       - capability: file_write
       - capability: http
@@ -295,6 +343,7 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: runtime_write
 """.strip()
             + "\n",
             encoding="utf-8",
@@ -308,6 +357,7 @@ policies:
         self.session_dir_patcher = patch.object(session, "SESSION_DIR", self.sessions_dir)
         self.workflow_dir_patcher = patch.object(workflow, "WORKFLOW_DIR", self.workflows_dir)
         self.tools_base_dir_patcher = patch.object(tools, "BASE_DIR", self.repo_dir)
+        self.tool_support_base_dir_patcher = patch.object(tool_support, "BASE_DIR", self.repo_dir)
         self.agents_config_patcher = patch.object(agent, "AGENTS_CONFIG_PATH", self.agents_config)
         self.policies_config_patcher = patch.object(
             policy, "POLICIES_CONFIG_PATH", self.policies_config
@@ -322,6 +372,7 @@ policies:
         self.session_dir_patcher.start()
         self.workflow_dir_patcher.start()
         self.tools_base_dir_patcher.start()
+        self.tool_support_base_dir_patcher.start()
         self.agents_config_patcher.start()
         self.policies_config_patcher.start()
         self.policy_base_dir_patcher.start()
@@ -336,6 +387,7 @@ policies:
         self.session_dir_patcher.stop()
         self.workflow_dir_patcher.stop()
         self.tools_base_dir_patcher.stop()
+        self.tool_support_base_dir_patcher.stop()
         self.agents_config_patcher.stop()
         self.policies_config_patcher.stop()
         self.policy_base_dir_patcher.stop()
@@ -640,6 +692,8 @@ agents:
         self.assertEqual(result["tool"], "list_files")
         self.assertEqual(result["tool_output"]["path"], ".")
         self.assertIn("docs/guide.md", result["tool_output"]["files"])
+        self.assertGreaterEqual(result["tool_output"]["scanned_file_count"], 1)
+        self.assertTrue(result["tool_output"]["file_previews"])
 
         payload = self.latest_log()
 
@@ -659,6 +713,7 @@ agents:
         self.assertEqual(result["tool"], "read_file_range")
         self.assertEqual(result["tool_output"]["path"], "docs/guide.md")
         self.assertEqual(result["tool_output"]["line_count"], 2)
+        self.assertEqual(result["tool_output"]["total_line_count"], 3)
         self.assertIn("ClarityOS supports sessions.", result["tool_output"]["content"])
 
         payload = self.latest_log()
@@ -679,11 +734,32 @@ agents:
         self.assertEqual(result["tool_output"]["query"], "ClarityOS")
         self.assertGreaterEqual(result["tool_output"]["result_count"], 1)
         self.assertEqual(result["tool_output"]["hits"][0]["path"], "docs/guide.md")
+        self.assertIn("match_preview", result["tool_output"]["hits"][0])
+        self.assertGreaterEqual(result["tool_output"]["matched_file_count"], 1)
 
         payload = self.latest_log()
 
         self.assertEqual(payload["result"]["tool"]["name"], "search_files")
         self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "ClarityOS")
+
+    def test_run_agent_list_directory_tool_success(self) -> None:
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="list_directory",
+            tool_args={"path": ".", "limit": 10},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "list_directory")
+        self.assertEqual(result["tool_output"]["path"], ".")
+        self.assertGreaterEqual(result["tool_output"]["directory_count"], 1)
+        self.assertTrue(any(entry["name"] == "docs" for entry in result["tool_output"]["entries"]))
+
+        payload = self.latest_log()
+
+        self.assertEqual(payload["result"]["tool"]["name"], "list_directory")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["limit"], 10)
 
     @patch("runtime.tools.request.urlopen")
     def test_run_agent_fetch_url_tool_success(self, mock_urlopen) -> None:
@@ -720,6 +796,8 @@ agents:
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "fetch_url")
         self.assertEqual(result["tool_output"]["domain"], "example.com")
+        self.assertEqual(result["tool_output"]["status_code"], 200)
+        self.assertIn("summary", result["tool_output"])
         self.assertIn("OpenClaw docs summary", result["tool_output"]["content"])
 
         payload = self.latest_log()
@@ -747,6 +825,7 @@ agents:
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "inspect_session")
+        self.assertIn("summary", result["tool_output"])
         self.assertEqual(result["tool_output"]["session"]["session_id"], created["session_id"])
         self.assertEqual(result["tool_output"]["session"]["message_count"], 0)
 
@@ -772,6 +851,7 @@ agents:
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "inspect_workflow")
+        self.assertIn("summary", result["tool_output"])
         self.assertEqual(
             result["tool_output"]["workflow"]["workflow_id"],
             workflow_result["workflow"]["workflow_id"],
@@ -802,6 +882,7 @@ agents:
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "inspect_queue")
+        self.assertIn("summary", result["tool_output"])
         self.assertGreaterEqual(result["tool_output"]["queue"]["total_jobs"], 1)
         self.assertEqual(result["tool_output"]["jobs"][0]["job_id"], created_job["job_id"])
 
@@ -822,6 +903,7 @@ agents:
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "inspect_worker")
+        self.assertIn("summary", result["tool_output"])
         self.assertEqual(result["tool_output"]["worker"]["worker_id"], created_worker["worker_id"])
         self.assertEqual(result["tool_output"]["worker"]["name"], "inspector")
 
@@ -832,6 +914,81 @@ agents:
             payload["result"]["tool"]["output"]["value"]["worker"]["worker_id"],
             created_worker["worker_id"],
         )
+
+    def test_run_agent_archive_session_tool_success(self) -> None:
+        created = session.create_session(title="Close me", agent="researcher")
+
+        result = agent.run_agent(
+            "",
+            "maintenance_operator",
+            tool_name="archive_session",
+            tool_args={"session_id": created["session_id"], "reason": "support cleanup"},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "archive_session")
+        self.assertEqual(result["tool_output"]["session"]["status"], "archived")
+        self.assertIn("summary", result["tool_output"])
+
+    def test_run_agent_promote_ready_jobs_tool_success(self) -> None:
+        queue.create_job(
+            job_type="workflow_start",
+            payload={"input": "hello", "agent": "default"},
+            delay_seconds=0,
+        )
+
+        result = agent.run_agent(
+            "",
+            "maintenance_operator",
+            tool_name="promote_ready_jobs",
+            tool_args={"limit": 5},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "promote_ready_jobs")
+        self.assertIn("promoted_count", result["tool_output"])
+        self.assertIn("summary", result["tool_output"])
+
+    def test_run_agent_repair_orphaned_workers_tool_success(self) -> None:
+        created_worker = worker.register_worker(name="orphan", lease_seconds=30)
+        worker.update_worker(
+            created_worker["worker_id"],
+            status="busy",
+            current_job_id=None,
+            transition_reason="fixture",
+        )
+
+        result = agent.run_agent(
+            "",
+            "maintenance_operator",
+            tool_name="repair_orphaned_workers",
+            tool_args={"limit": 5},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "repair_orphaned_workers")
+        self.assertGreaterEqual(result["tool_output"]["repaired_count"], 1)
+        self.assertIn(created_worker["worker_id"], result["tool_output"]["repaired_worker_ids"])
+
+    def test_run_agent_archive_session_denied_for_default_agent(self) -> None:
+        created = session.create_session(title="Do not close", agent="researcher")
+
+        with self.assertRaisesRegex(ValueError, "Tool not allowed for agent `default`: archive_session"):
+            agent.run_agent(
+                "",
+                "default",
+                tool_name="archive_session",
+                tool_args={"session_id": created["session_id"], "reason": "not allowed"},
+            )
+
+    def test_run_agent_promote_ready_jobs_denied_for_researcher_agent(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Tool not allowed for agent `researcher`: promote_ready_jobs"):
+            agent.run_agent(
+                "",
+                "researcher",
+                tool_name="promote_ready_jobs",
+                tool_args={"limit": 5},
+            )
 
     def test_run_agent_memory_write_tool_success(self) -> None:
         result = agent.run_agent(
@@ -1273,13 +1430,17 @@ agents:
 
     def test_call_tool_lists_and_searches_repo_files(self) -> None:
         listed = tools.call_tool("list_files", {"path": ".", "pattern": "*.md"})
+        directory = tools.call_tool("list_directory", {"path": ".", "limit": 10})
         searched = tools.call_tool("search_files", {"path": ".", "query": "ClarityOS", "pattern": "*.md"})
         ranged = tools.call_tool("read_file_range", {"path": "docs/guide.md", "start_line": 2, "end_line": 2})
 
         self.assertTrue(listed["ok"])
         self.assertIn("docs/guide.md", listed["output"]["value"]["files"])
+        self.assertTrue(directory["ok"])
+        self.assertTrue(any(entry["name"] == "docs" for entry in directory["output"]["value"]["entries"]))
         self.assertTrue(searched["ok"])
         self.assertEqual(searched["output"]["value"]["hits"][0]["path"], "docs/guide.md")
+        self.assertIn("match_preview", searched["output"]["value"]["hits"][0])
         self.assertTrue(ranged["ok"])
         self.assertEqual(ranged["output"]["value"]["content"], "ClarityOS supports sessions.")
 

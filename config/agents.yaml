@@ -20,6 +20,7 @@ agents:
       allowed_tools:
         - read_file
         - list_files
+        - list_directory
         - read_file_range
         - search_files
         - inspect_session
@@ -33,6 +34,7 @@ agents:
       - get_time
       - read_file
       - list_files
+      - list_directory
       - read_file_range
       - search_files
       - inspect_session
@@ -53,6 +55,7 @@ agents:
       - get_time
       - read_file
       - list_files
+      - list_directory
       - read_file_range
       - search_files
       - fetch_url
@@ -73,6 +76,29 @@ agents:
     tools:
       - memory_write
       - memory_query
+
+  maintenance_operator:
+    system: "You run narrow, operator-safe maintenance actions with explicit runtime visibility."
+    model: fast
+    policy: runtime_maintenance
+    budgets:
+      max_steps: 4
+      max_tool_calls: 3
+      max_tokens: 4000
+      max_wall_clock_ms: 30000
+    tools:
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
+      - archive_session
+      - prune_sessions
+      - promote_ready_jobs
+      - repair_stale_jobs
+      - repair_orphaned_workers
+      - safe_resume_workflow
+      - replay_workflow
+      - recover_workflow
 
   local:
     system: "You are a helpful assistant"

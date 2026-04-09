@@ -13,6 +13,7 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -33,6 +34,7 @@ policies:
           - docs.crewai.com
     deny:
       - capability: file_write
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -50,6 +52,7 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: runtime_write
       - capability: memory_read
       - capability: memory_write
 
@@ -75,3 +78,23 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: runtime_write
+
+  runtime_maintenance:
+    allow:
+      - capability: runtime_read
+      - capability: runtime_write
+        commands:
+          - archive_session
+          - prune_sessions
+          - promote_ready_jobs
+          - repair_stale_jobs
+          - repair_orphaned_workers
+          - safe_resume_workflow
+          - replay_workflow
+          - recover_workflow
+    deny:
+      - capability: file_write
+      - capability: http
+      - capability: memory_read
+      - capability: memory_write

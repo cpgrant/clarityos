@@ -20,6 +20,7 @@ CAPABILITY_CLASSES = {
     "http",
     "exec",
     "runtime_read",
+    "runtime_write",
     "memory_read",
     "memory_write",
 }

@@ -28,6 +28,7 @@ agents:
     tools:
       - read_file
       - list_files
+      - list_directory
       - read_file_range
       - search_files
       - fetch_url
@@ -48,3 +49,26 @@ agents:
     tools:
       - memory_write
       - memory_query
+
+  maintenance_operator:
+    system: "You run narrow, operator-safe maintenance actions with explicit runtime visibility."
+    model: fast
+    policy: runtime_maintenance_production
+    budgets:
+      max_steps: 3
+      max_tool_calls: 2
+      max_tokens: 3000
+      max_wall_clock_ms: 20000
+    tools:
+      - inspect_session
+      - inspect_workflow
+      - inspect_queue
+      - inspect_worker
+      - archive_session
+      - prune_sessions
+      - promote_ready_jobs
+      - repair_stale_jobs
+      - repair_orphaned_workers
+      - safe_resume_workflow
+      - replay_workflow
+      - recover_workflow

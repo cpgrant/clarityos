@@ -4,11 +4,17 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.3`
-- Current focus: `v1.4` tooling maturity and capability depth
-- Next target: `v1.4` slice 1 tool registry structure
+- Current release: `v1.4`
+- Current focus: `v1.5` memory and continuity maturity
+- Next target: `v1.5` slice 1 memory summarization and compaction
 
-Direction after `v1.3`: `v1.4` prioritizes tool maturity and capability depth, improving the explicit tool layer without giving up ClarityOS's inspectability and policy boundaries.
+Direction after `v1.4`: `v1.5` prioritizes memory and continuity maturity, making longer-running assistant sessions more coherent without slipping into opaque long-context dumping.
+
+`v1.4` is complete through a cleaner explicit tool registry, stronger bounded retrieval outputs, and narrow runtime-maintenance action tools that stay policy-scoped and operator-safe.
+
+`v1.5` now begins the memory and continuity layer: summarization, compaction, carry-forward rules, and stronger operator visibility for long-running browser-first assistant sessions.
+
+For `v1.4`, the action side remains intentionally runtime-maintenance-only. Repo write helpers are still explicitly deferred beyond this release.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -36,6 +42,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v1.1.md`
 - `docs/history/v1.2.md`
 - `docs/history/v1.3.md`
+- `docs/history/v1.4.md`
 
 ## What It Does
 
@@ -80,6 +87,8 @@ clarityos/
 │   ├── v1.3-checklist.md
 │   ├── v1.3-release-path.md
 │   ├── v1.4-checklist.md
+│   ├── v1.4-release-path.md
+│   ├── v1.5-checklist.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
@@ -89,7 +98,10 @@ clarityos/
 │       ├── v0.8.md
 │       ├── v0.9.md
 │       ├── v1.0.md
-│       └── v1.1.md
+│       ├── v1.1.md
+│       ├── v1.2.md
+│       ├── v1.3.md
+│       └── v1.4.md
 ├── memories/
 ├── sessions/
 ├── jobs/
@@ -116,8 +128,15 @@ clarityos/
 │   ├── queue.py
 │   ├── session.py
 │   ├── state.py
+│   ├── tool_support.py
 │   ├── trace.py
 │   ├── tools.py
+│   ├── tools_actions.py
+│   ├── tools_memory.py
+│   ├── tools_repo.py
+│   ├── tools_runtime.py
+│   ├── tools_utility.py
+│   ├── tools_web.py
 │   ├── worker.py
 │   ├── workflow.py
 │   └── workflow_runner.py
@@ -551,6 +570,14 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"agent":"researcher","tool":"list_files","tool_args":{"path":".","pattern":"*.md","limit":10}}'
 ```
 
+List one repo directory with a bounded navigation tool:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"list_directory","tool_args":{"path":"runtime","limit":20}}'
+```
+
 Search repo files with a safe tool:
 
 ```bash
@@ -565,6 +592,7 @@ Read a specific file range with a safe tool:
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"researcher","tool":"read_file_range","tool_args":{"path":"README.md","start_line":1,"end_line":12}}'
+```
 
 Fetch a controlled external text or HTML page:
 
@@ -572,7 +600,6 @@ Fetch a controlled external text or HTML page:
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"researcher","tool":"fetch_url","tool_args":{"url":"https://docs.openclaw.ai/","max_chars":1200}}'
-```
 ```
 
 Inspect a session with a compact runtime tool:
@@ -642,6 +669,39 @@ Inspect the compact incident summary:
 ```bash
 curl "http://127.0.0.1:8000/incidents/workflows/wf-123/summary?trace_limit=20" \
   -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+```
+
+Common retrieval output shapes:
+
+- `list_directory`
+  Returns `path`, `entry_count`, `directory_count`, `file_count`, `truncated`, and bounded `entries`.
+- `list_files`
+  Returns `path`, `result_count`, `scanned_file_count`, `truncated`, bounded `files`, and compact `file_previews`.
+- `search_files`
+  Returns `query`, `result_count`, `matched_file_count`, `matched_files`, `files_scanned`, and `hits` with `match_preview`, `context_before`, and `context_after`.
+- `read_file_range`
+  Returns `path`, `start_line`, `end_line`, `line_count`, `total_line_count`, `content_preview`, and full bounded `content`.
+- `fetch_url`
+  Returns `url`, `domain`, `status_code`, `content_type`, `content_length`, `summary`, `content_preview`, `content`, and `truncated`.
+- `inspect_session`, `inspect_workflow`, `inspect_queue`, `inspect_worker`
+  Return a top-level `summary` plus the detailed structured payload for the inspected runtime entity.
+- `archive_session`, `prune_sessions`, `promote_ready_jobs`, `repair_stale_jobs`, `repair_orphaned_workers`, `safe_resume_workflow`, `replay_workflow`, `recover_workflow`
+  Are narrow maintenance actions intended for `maintenance_operator`, not for general-purpose assistant use.
+- Repo write helpers are intentionally not part of the `v1.4` shipped action set.
+
+When to use `maintenance_operator`:
+
+- use it for explicit runtime maintenance such as archiving sessions, promoting due jobs, repairing stale queue/worker state, and resuming or recovering workflows
+- do not use it for general assistant Q&A, repo research, or broad mutation tasks
+- treat it like an operator-facing helper with a narrow, supportable action set
+
+When you want a human-readable tool result during manual testing, filter the `/run` envelope with `jq`:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":"runtime","query":"session","pattern":"*.py","limit":5}}' \
+  | jq '{status, tool, tool_output}'
 ```
 
 Queue health with operator auth:
@@ -1214,6 +1274,12 @@ curl -X POST http://127.0.0.1:8000/run \
 ```bash
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"list_directory","tool_args":{"path":"runtime","limit":20}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
   -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityOS","pattern":"*.md","limit":10}}'
 ```
 
@@ -1259,6 +1325,32 @@ curl -X POST http://127.0.0.1:8000/run \
   -d '{"agent":"memory_operator","tool":"memory_query","tool_args":{"query":"retry","scope_kind":"agent","agent":"researcher","limit":3,"max_chars":400}}'
 ```
 
+Run a narrow maintenance action explicitly:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"maintenance_operator","tool":"archive_session","tool_args":{"session_id":"<session_id>","reason":"support cleanup"}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"maintenance_operator","tool":"repair_orphaned_workers","tool_args":{"limit":10}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"maintenance_operator","tool":"promote_ready_jobs","tool_args":{"limit":10}}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"maintenance_operator","tool":"recover_workflow","tool_args":{"workflow_id":"<workflow_id>","reclaim_expired_jobs":true,"reschedule_failed_jobs":true}}'
+```
+
 5. Verify safety behavior:
 
 ```bash
@@ -1277,6 +1369,12 @@ curl -i -X POST http://127.0.0.1:8000/run \
 curl -i -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"memory_operator","tool":"memory_write","tool_args":{"memory_type":"fact","scope_kind":"global","payload":{"statement":"global memory is restricted"}}}'
+```
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"promote_ready_jobs","tool_args":{"limit":5}}'
 ```
 
 6. Verify workflow-linked memory and operator endpoints:
@@ -1389,7 +1487,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.3` is the current release. `v1.4` is now the next milestone, focused on tooling maturity and capability depth.
+`v1.4` is the current release. `v1.5` is now the next milestone, focused on memory and continuity maturity.
 
 ### `v1.1` Acceptance Criteria
 

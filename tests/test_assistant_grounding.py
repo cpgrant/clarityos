@@ -25,6 +25,7 @@ class AssistantGroundingTests(unittest.TestCase):
                                     "path": "docs/roadmap.md",
                                     "line_number": 12,
                                     "line": "Current focus: v1.3",
+                                    "match_preview": "Current focus: v1.3",
                                 }
                             ]
                         }
@@ -105,6 +106,7 @@ class AssistantGroundingTests(unittest.TestCase):
                         "value": {
                             "url": "https://docs.openclaw.ai/",
                             "content": "OpenClaw is a self-hosted AI gateway with many channels.",
+                            "summary": "OpenClaw docs: self-hosted AI gateway with many channels.",
                         }
                     },
                 }

@@ -6,10 +6,10 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.3`
-- Current release: `v1.3`
-- Current focus: `v1.4` tooling maturity and capability depth
-- Next planned step: `v1.4` slice 1 tool registry structure
+- Latest completed milestone: `v1.4`
+- Current release: `v1.4`
+- Current focus: `v1.5` memory and continuity maturity
+- Next planned step: `v1.5` slice 1 memory summarization and compaction
 
 ## Milestones
 
@@ -240,7 +240,7 @@ Current progress note:
 - Slice 4 is complete through an explicit `v1.3` release path and measurable assistant-quality gates
 
 16. `v1.4` - tooling maturity and capability depth
-Status: proposed
+Status: completed
 
 Goal:
 Strengthen the assistant's explicit tool layer so it can inspect, retrieve, and act usefully without losing ClarityOS's inspectability and policy boundaries.
@@ -258,9 +258,18 @@ Likely use cases:
 - runtime-aware operator assistance
 - more capable structured task execution
 
+Current progress note:
+
+- Slice 1 is complete through an internal split of the tool layer into explicit repo, web, runtime-inspection, memory, utility, and shared-support modules while preserving `runtime.tools` as the single registry facade
+- Slice 2 is complete through richer retrieval output shapes, compact runtime/web summaries, a bounded `list_directory` helper, and clearer documented examples for testing and interpreting the stronger retrieval layer
+- Slice 3 is complete through narrow operator-safe action tools, a dedicated `runtime_write` capability, denial coverage for non-maintenance agents, and an explicit decision to keep `v1.4` runtime-maintenance-only on the action side
+- Slice 4 is complete through an explicit `v1.4` release path and release gates for the stronger tool layer
+- The current `v1.4` action decision is to keep the shipped set runtime-maintenance-only and explicitly defer repo write helpers until a later milestone
+
 Explicitly not the focus:
 
 - broad write or exec-by-default behavior
+- repo write helpers in `v1.4`
 - hidden skills or opaque agent magic
 
 17. `v1.5` - memory and continuity maturity

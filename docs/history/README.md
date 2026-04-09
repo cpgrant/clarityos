@@ -16,7 +16,8 @@ Available snapshots:
 - `v1.1.md`
 - `v1.2.md`
 - `v1.3.md`
+- `v1.4.md`
 
-Latest archived milestone: `v1.3`
+Latest archived milestone: `v1.4`
 
-That `v1.3` snapshot is the current baseline archive while the repo plans the next milestone.
+That `v1.4` snapshot is the current baseline archive while the repo plans the next milestone.
