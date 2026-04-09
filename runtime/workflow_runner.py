@@ -25,6 +25,7 @@ def start_workflow(
     approval_id: str | None = None,
     job_id: str | None = None,
     worker_id: str | None = None,
+    prompt_context: list[dict] | None = None,
 ) -> dict:
     return run_agent(
         user_input=user_input,
@@ -34,6 +35,7 @@ def start_workflow(
         approval_id=approval_id,
         job_id=job_id,
         worker_id=worker_id,
+        prompt_context=prompt_context,
     )
 
 

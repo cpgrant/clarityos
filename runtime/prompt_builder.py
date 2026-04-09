@@ -1,6 +1,12 @@
-def build_prompt(user_input: str, config: dict, shared_memories: list[dict] | None = None) -> str:
+def build_prompt(
+    user_input: str,
+    config: dict,
+    shared_memories: list[dict] | None = None,
+    prompt_context: list[dict] | None = None,
+) -> str:
     system = config.get("system", "")
     shared_memories = shared_memories or []
+    prompt_context = prompt_context or []
 
     shared_memory_section = ""
     if shared_memories:
@@ -17,9 +23,24 @@ def build_prompt(user_input: str, config: dict, shared_memories: list[dict] | No
             )
         shared_memory_section = "\nSHARED MEMORY:\n" + "\n".join(lines)
 
+    prompt_context_section = ""
+    if prompt_context:
+        blocks = []
+        for entry in prompt_context:
+            title = str(entry.get("title", "Context")).strip() or "Context"
+            source = str(entry.get("source", "")).strip()
+            content = str(entry.get("content", "")).strip()
+            if not content:
+                continue
+            header = f"{title} [{source}]" if source else title
+            blocks.append(f"{header}:\n{content}")
+        if blocks:
+            prompt_context_section = "\nPROJECT CONTEXT:\n" + "\n\n".join(blocks)
+
     return f"""SYSTEM:
 {system}
 {shared_memory_section}
+{prompt_context_section}
 
 USER:
 {user_input}

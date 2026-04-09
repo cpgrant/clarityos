@@ -97,7 +97,7 @@ OPERATOR_UI_PATH = BASE_DIR / "ui" / "operator.html"
 WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
 WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
 
-app = FastAPI(title="ClarityOS", version="1.2.0")
+app = FastAPI(title="ClarityOS", version="1.3.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
 SESSION_AUTH_HEADER = DEFAULT_SESSION_AUTH_HEADER

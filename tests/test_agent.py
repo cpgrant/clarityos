@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib import error
 
 import runtime.artifact as artifact
 import runtime.approval as approval
@@ -88,7 +89,7 @@ agents:
   researcher:
     system: "You provide precise, structured answers"
     model: smart
-    policy: safe_readonly
+    policy: safe_research_http
     budgets:
       max_steps: 4
       max_tool_calls: 2
@@ -100,6 +101,7 @@ agents:
       - list_files
       - read_file_range
       - search_files
+      - fetch_url
       - inspect_session
       - inspect_workflow
       - inspect_queue
@@ -223,6 +225,26 @@ policies:
     deny:
       - capability: file_write
       - capability: http
+      - capability: memory_read
+      - capability: memory_write
+
+  safe_research_http:
+    allow:
+      - capability: model_call
+      - capability: exec
+        commands:
+          - get_time
+      - capability: file_read
+        paths:
+          - "**"
+      - capability: runtime_read
+      - capability: http
+        domains:
+          - example.com
+          - docs.openclaw.ai
+          - platform.openai.com
+    deny:
+      - capability: file_write
       - capability: memory_read
       - capability: memory_write
 
@@ -374,6 +396,32 @@ agents:
         self.assertEqual(saved_workflow.status, "succeeded")
         self.assertEqual(saved_workflow.artifacts[0]["artifact_id"], result["artifacts"][0]["artifact_id"])
         self.assertEqual(result["output"], "ok")
+
+    @patch.object(agent, "call_model", side_effect=fake_model)
+    def test_run_agent_includes_prompt_context_in_prompt_and_trace(self, _mock_call_model) -> None:
+        result = agent.run_agent(
+            "Summarize the roadmap",
+            "researcher",
+            prompt_context=[
+                {
+                    "title": "Project status",
+                    "source": "README.md",
+                    "content": "Current release: v1.2",
+                }
+            ],
+        )
+
+        self.assertIn("PROJECT CONTEXT:", result["prompt"])
+        self.assertIn("Project status [README.md]", result["prompt"])
+        self.assertIn("Current release: v1.2", result["prompt"])
+        self.assertEqual(
+            result["workflow"]["request"]["prompt_context"],
+            [{"title": "Project status", "source": "README.md"}],
+        )
+
+        payload = self.latest_log()
+        self.assertEqual(payload["source_attribution"]["context"][1]["type"], "prompt_context")
+        self.assertEqual(payload["source_attribution"]["context"][1]["source"], "README.md")
 
     @patch.object(agent, "call_model", side_effect=fake_model)
     def test_trace_created_for_success(self, _mock_call_model) -> None:
@@ -636,6 +684,56 @@ agents:
 
         self.assertEqual(payload["result"]["tool"]["name"], "search_files")
         self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "ClarityOS")
+
+    @patch("runtime.tools.request.urlopen")
+    def test_run_agent_fetch_url_tool_success(self, mock_urlopen) -> None:
+        class FakeHeaders:
+            def get(self, name: str, default=None):
+                if name.lower() == "content-type":
+                    return "text/plain; charset=utf-8"
+                return default
+
+            def get_content_charset(self):
+                return "utf-8"
+
+        class FakeResponse:
+            headers = FakeHeaders()
+
+            def read(self):
+                return b"OpenClaw docs summary"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        mock_urlopen.return_value = FakeResponse()
+
+        result = agent.run_agent(
+            "",
+            "researcher",
+            tool_name="fetch_url",
+            tool_args={"url": "https://example.com/docs", "max_chars": 200},
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool"], "fetch_url")
+        self.assertEqual(result["tool_output"]["domain"], "example.com")
+        self.assertIn("OpenClaw docs summary", result["tool_output"]["content"])
+
+        payload = self.latest_log()
+        self.assertEqual(payload["result"]["tool"]["name"], "fetch_url")
+        self.assertEqual(payload["decision_log"][0]["matched_scope"], "domain:example.com")
+
+    def test_run_agent_fetch_url_denied_for_default_agent(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Tool not allowed for agent `default`: fetch_url"):
+            agent.run_agent(
+                "",
+                "default",
+                tool_name="fetch_url",
+                tool_args={"url": "https://example.com/docs"},
+            )
 
     def test_run_agent_inspect_session_tool_success(self) -> None:
         created = session.create_session(title="Research thread", agent="researcher")
@@ -946,7 +1044,7 @@ agents:
 
     def test_run_agent_search_files_blocks_path_traversal(self) -> None:
         with self.assertRaisesRegex(
-            PermissionError, "No allow rule matched in policy `safe_readonly` for capability `file_read`"
+            PermissionError, "No allow rule matched in policy `safe_research_http` for capability `file_read`"
         ):
             agent.run_agent(
                 "",

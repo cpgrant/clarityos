@@ -8,6 +8,7 @@ from typing import Any
 import uuid
 
 from runtime.errors import SessionAuthError
+from runtime.assistant_grounding import build_assistant_prompt_context
 from runtime.state import load_state_payload, write_state_payload
 from runtime.workflow_runner import start_workflow
 
@@ -683,6 +684,23 @@ def append_session_message(
     if session.title is None:
         session.title = default_title(normalized_content)
 
+    prompt_context = build_assistant_prompt_context(
+        surface=session.ownership.get("surface"),
+        user_input=normalized_content,
+        agent_name=message_agent,
+    )
+    if prompt_context:
+        user_message.metadata["grounding"] = {
+            "profile": "repo_assistant",
+            "sources": [
+                {
+                    "title": entry.get("title"),
+                    "source": entry.get("source"),
+                }
+                for entry in prompt_context
+            ],
+        }
+
     try:
         result = start_workflow(
             user_input=normalized_content,
@@ -690,6 +708,7 @@ def append_session_message(
             tool_name=tool_name,
             tool_args=tool_args,
             approval_id=approval_id,
+            prompt_context=prompt_context,
         )
     except Exception as exc:
         transition_session(session, "errored")

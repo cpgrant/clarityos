@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -71,6 +72,7 @@ class RunState:
     budget_used: dict | None = None
     approval_record: dict | None = None
     workflow: object | None = None
+    prompt_context: list[dict] = field(default_factory=list)
     decision_log: list[dict] = field(default_factory=list)
     source_attribution: dict = field(
         default_factory=lambda: {
@@ -565,7 +567,9 @@ def initialize_workflow(
     workflow_depth: int = 0,
     delegation: dict | None = None,
     shared_memories: list[dict] | None = None,
+    prompt_context: list[dict] | None = None,
 ) -> None:
+    state.prompt_context = [dict(entry) for entry in (prompt_context or []) if isinstance(entry, dict)]
     if approval_id is None:
         state.parent_run_id = parent_run_id
         state.workflow = create_workflow_state(
@@ -577,6 +581,13 @@ def initialize_workflow(
                 "agent": agent_name,
                 "tool": tool_name,
                 "tool_args": tool_args,
+                "prompt_context": [
+                    {
+                        "title": str(entry.get("title", "")).strip(),
+                        "source": str(entry.get("source", "")).strip(),
+                    }
+                    for entry in state.prompt_context
+                ],
             },
             parent_workflow_id=parent_workflow_id,
             root_workflow_id=root_workflow_id,
@@ -904,6 +915,19 @@ def execute_retry_wait_step(
     return None
 
 
+def tool_domain(tool_definition: dict, tool_args: dict | None) -> str | None:
+    if not isinstance(tool_args, dict):
+        return None
+    domain_arg = tool_definition.get("domain_arg")
+    if not isinstance(domain_arg, str) or not domain_arg:
+        return None
+    raw_value = tool_args.get(domain_arg)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    parsed = urlparse(raw_value.strip())
+    return (parsed.hostname or parsed.netloc or None)
+
+
 def execute_tool_step(
     state: RunState,
     *,
@@ -944,6 +968,7 @@ def execute_tool_step(
     action = PolicyAction(
         capability=tool_definition["capability"],
         path=(tool_args or {}).get(tool_definition.get("path_arg", "")),
+        domain=tool_domain(tool_definition, tool_args),
         command=tool_definition.get("command"),
         memory_type=(tool_args or {}).get("memory_type"),
         scope_kind=(tool_args or {}).get("scope_kind"),
@@ -1062,6 +1087,7 @@ def execute_model_step(
         user_input=user_input,
         config=agent_config,
         shared_memories=state.workflow.shared_memories if state.workflow is not None else None,
+        prompt_context=state.prompt_context,
     )
     state.model_alias = agent_config["model"]
 
@@ -1070,6 +1096,14 @@ def execute_model_step(
         "system_prompt",
         token_estimate=estimate_tokens(agent_config.get("system", "")),
     )
+    for entry in state.prompt_context:
+        append_context_source(
+            state,
+            "prompt_context",
+            token_estimate=estimate_tokens(entry.get("content", "")),
+            title=entry.get("title"),
+            source=entry.get("source"),
+        )
     append_context_source(
         state,
         "composed_prompt",
@@ -1306,6 +1340,7 @@ def run_agent(
     worker_id: str | None = None,
     delegation: dict | None = None,
     shared_memories: list[dict] | None = None,
+    prompt_context: list[dict] | None = None,
 ) -> dict:
     state = RunState(
         run_id=run_id or str(uuid.uuid4()),
@@ -1329,6 +1364,7 @@ def run_agent(
             workflow_depth=workflow_depth,
             delegation=delegation,
             shared_memories=shared_memories,
+            prompt_context=prompt_context,
         )
         agent_config = load_agent(agent_name)
         configure_workflow_for_agent(state, agent_config=agent_config)

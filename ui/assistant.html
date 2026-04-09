@@ -124,6 +124,12 @@
       gap: 12px;
     }
 
+    .helper {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
     label {
       display: grid;
       gap: 6px;
@@ -165,6 +171,16 @@
     .thread-header p {
       margin: 0;
       color: var(--muted);
+    }
+
+    .thread-state {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .thread-state strong {
+      color: var(--ink);
     }
 
     .messages {
@@ -341,6 +357,7 @@
             <button class="secondary" id="new-session">New Session</button>
             <button class="secondary" id="refresh-session">Refresh</button>
           </div>
+          <div id="session-note" class="helper">Session ownership stays in this browser through a session token.</div>
         </div>
       </aside>
 
@@ -348,6 +365,7 @@
         <div class="thread-header">
           <h2 id="thread-title">Fresh conversation</h2>
           <p>Messages are routed through the existing session and workflow APIs.</p>
+          <div id="thread-state" class="thread-state"><strong>No active session yet.</strong> Create a session or send a first message to start an owned thread.</div>
         </div>
 
         <div id="messages" class="messages">
@@ -386,6 +404,8 @@
     const sendButtonEl = document.getElementById("send-button");
     const newSessionEl = document.getElementById("new-session");
     const refreshSessionEl = document.getElementById("refresh-session");
+    const sessionNoteEl = document.getElementById("session-note");
+    const threadStateEl = document.getElementById("thread-state");
 
     function readStoredSession() {
       const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -422,10 +442,23 @@
       statusLineEl.classList.toggle("error", isError);
     }
 
+    function setBusy(isBusy) {
+      sendButtonEl.disabled = isBusy;
+      newSessionEl.disabled = isBusy;
+      refreshSessionEl.disabled = isBusy;
+      agentSelect.disabled = isBusy;
+    }
+
+    function messageEmptyState() {
+      return sessionId
+        ? "This session has no visible messages yet."
+        : "Start a session and send a message to begin.";
+    }
+
     function renderMessages(messages) {
       messagesEl.innerHTML = "";
       if (!Array.isArray(messages) || messages.length === 0) {
-        messagesEl.innerHTML = '<div class="empty">Start a session and send a message to begin.</div>';
+        messagesEl.innerHTML = `<div class="empty">${messageEmptyState()}</div>`;
         return;
       }
 
@@ -456,6 +489,19 @@
       messageCountEl.textContent = String((session.messages || []).length);
       threadTitleEl.textContent = session.title || "Untitled conversation";
       agentSelect.value = session.agent || agentSelect.value;
+      const owned = session.ownership?.auth_required ? "Owned in this browser" : "Open session";
+      sessionNoteEl.textContent = `${owned}. ${session.current_workflow_id ? "Current workflow is linked below." : "No workflow has been attached yet."}`;
+      if (session.status === "waiting") {
+        threadStateEl.innerHTML = "<strong>Waiting for workflow progress.</strong> This thread is paused on runtime work, approval, or retry handling.";
+      } else if (session.status === "errored") {
+        threadStateEl.innerHTML = "<strong>Last request errored.</strong> You can refresh the session, inspect it in the operator console, or send another message.";
+      } else if (session.status === "recovered") {
+        threadStateEl.innerHTML = "<strong>Recovered thread.</strong> The last waiting or errored state has been repaired and the session is usable again.";
+      } else if (session.status === "active") {
+        threadStateEl.innerHTML = "<strong>Active session.</strong> Messages are flowing through the normal session and workflow path.";
+      } else {
+        threadStateEl.innerHTML = "<strong>Session ready.</strong> Send a message to continue the current thread.";
+      }
       renderMessages(session.messages || []);
     }
 
@@ -492,7 +538,7 @@
       sessionToken = payload.session_token || null;
       persistSessionCredentials(sessionId, sessionToken);
       updateSessionSummary({ ...payload, messages: [] });
-      setStatus("Session created.");
+      setStatus("Session created. Token stored in this browser.");
       startPolling();
       return payload;
     }
@@ -553,6 +599,7 @@
       }
 
       sendButtonEl.disabled = true;
+      setBusy(true);
       setStatus("Sending message...");
       try {
         await ensureSession();
@@ -577,7 +624,7 @@
       } catch (error) {
         setStatus(error.message, true);
       } finally {
-        sendButtonEl.disabled = false;
+        setBusy(false);
       }
     });
 
@@ -586,8 +633,10 @@
       sessionId = null;
       sessionToken = null;
       persistSessionCredentials(null, null);
-      messagesEl.innerHTML = '<div class="empty">Start a session and send a message to begin.</div>';
+      messagesEl.innerHTML = `<div class="empty">${messageEmptyState()}</div>`;
       threadTitleEl.textContent = "Fresh conversation";
+      threadStateEl.innerHTML = "<strong>Starting a fresh session.</strong> A new owned thread will be created in this browser.";
+      sessionNoteEl.textContent = "Session ownership stays in this browser through a session token.";
       try {
         await createSession();
       } catch (error) {
@@ -614,6 +663,7 @@
           startPolling();
         } else {
           setStatus("Create a session or send a first message.");
+          threadStateEl.innerHTML = "<strong>No active session yet.</strong> Create a session or send a first message to start an owned thread.";
         }
       } catch (error) {
         setStatus(error.message, true);

@@ -41,9 +41,9 @@ agents:
       - inspect_worker
 
   researcher:
-    system: "You provide precise, structured answers"
+    system: "You provide precise, structured answers. Prefer grounded, concise responses. When project context is supplied, use it directly, avoid generic software advice, and make the structure easy to scan."
     model: smart
-    policy: safe_readonly
+    policy: safe_research_http
     budgets:
       max_steps: 4
       max_tool_calls: 2
@@ -55,6 +55,7 @@ agents:
       - list_files
       - read_file_range
       - search_files
+      - fetch_url
       - inspect_session
       - inspect_workflow
       - inspect_queue

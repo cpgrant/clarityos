@@ -4,11 +4,11 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.2`
-- Current focus: `v1.3` planning
-- Next target: define `v1.3` scope from release experience
+- Current release: `v1.3`
+- Current focus: `v1.4` tooling maturity and capability depth
+- Next target: `v1.4` slice 1 tool registry structure
 
-Direction after `v1.2`: define `v1.3` from real deployment needs, prioritizing assistant quality, useful tools, and grounded behavior over channel sprawl.
+Direction after `v1.3`: `v1.4` prioritizes tool maturity and capability depth, improving the explicit tool layer without giving up ClarityOS's inspectability and policy boundaries.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -35,6 +35,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v1.0.md`
 - `docs/history/v1.1.md`
 - `docs/history/v1.2.md`
+- `docs/history/v1.3.md`
 
 ## What It Does
 
@@ -75,6 +76,10 @@ clarityos/
 │   ├── v1.0-release-path.md
 │   ├── v1.1-checklist.md
 │   ├── v1.2-checklist.md
+│   ├── v1.2-release-path.md
+│   ├── v1.3-checklist.md
+│   ├── v1.3-release-path.md
+│   ├── v1.4-checklist.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
@@ -560,6 +565,14 @@ Read a specific file range with a safe tool:
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent":"researcher","tool":"read_file_range","tool_args":{"path":"README.md","start_line":1,"end_line":12}}'
+
+Fetch a controlled external text or HTML page:
+
+```bash
+curl -X POST http://127.0.0.1:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"researcher","tool":"fetch_url","tool_args":{"url":"https://docs.openclaw.ai/","max_chars":1200}}'
+```
 ```
 
 Inspect a session with a compact runtime tool:
@@ -1376,7 +1389,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.2` is the current release. The next step is to define `v1.3` from actual deployment experience and the most valuable assistant-quality gaps.
+`v1.3` is the current release. `v1.4` is now the next milestone, focused on tooling maturity and capability depth.
 
 ### `v1.1` Acceptance Criteria
 
@@ -1407,3 +1420,19 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - Slice 3 complete: operators can archive and prune sessions, and have dedicated playbooks for assistant incidents, widget deployment, and session cleanup
 - Slice 4 complete: `docs/v1.2-release-path.md` defines the first narrow deployed assistant profile and its release gates
 - Still intentionally out of scope: Telegram, Slack, hosted hub behavior, multi-tenant browser delivery, and broad channel sprawl
+
+### `v1.3` Acceptance Criteria
+
+- Browser-first assistant questions are more grounded and less generic than the `v1.2` baseline.
+- Tool-guided grounding stays explicit and policy-aware rather than hidden or broad.
+- Final answers are more structured and easier to scan for planning, comparison, and status questions.
+- Browser surfaces are easier to trust because their loading, empty, error, and session states are clearer.
+- One narrow browser-first assistant-quality path is documented and measurably better before broader assistant-platform expansion.
+
+`v1.3` completion snapshot:
+
+- Slice 1 complete: assistant surfaces inject repo and roadmap grounding with stronger structured-answer guidance
+- Slice 2 complete: guarded tool-guided grounding now uses safe repo/runtime retrieval, controlled fetches, and stronger working-answer framing
+- Slice 3 complete: `/assistant`, `/operator`, and `/widget` now have smoke validation plus clearer loading, empty, error, and session-state behavior
+- Slice 4 complete: `docs/v1.3-release-path.md` defines the narrow supported use cases and measurable quality gates for the milestone
+- Still intentionally out of scope: many-channel expansion, broad arbitrary web research, plugin marketplace behavior, and unrestricted execution

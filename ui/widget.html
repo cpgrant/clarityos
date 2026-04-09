@@ -195,6 +195,12 @@
       color: var(--error);
     }
 
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
     .empty {
       color: var(--muted);
       font-style: italic;
@@ -230,6 +236,7 @@
           <button type="submit" class="primary" id="send-button">Send</button>
         </div>
       </div>
+      <div id="widget-note" class="note">Widget access stays scoped to this browser session and the configured host policy.</div>
     </form>
   </div>
 
@@ -270,6 +277,7 @@
     const statusLineEl = document.getElementById("status-line");
     const sendButtonEl = document.getElementById("send-button");
     const newThreadEl = document.getElementById("new-thread");
+    const widgetNoteEl = document.getElementById("widget-note");
 
     function readStoredSession() {
       const raw = window.localStorage.getItem(storageKey);
@@ -326,10 +334,22 @@
       statusLineEl.classList.toggle("error", isError);
     }
 
+    function setBusy(isBusy) {
+      sendButtonEl.disabled = isBusy;
+      newThreadEl.disabled = isBusy;
+      inputEl.disabled = isBusy;
+    }
+
+    function messageEmptyState() {
+      return sessionId
+        ? "This embed thread is ready for the next message."
+        : "Send a message to start a session-backed assistant thread.";
+    }
+
     function renderMessages(messages) {
       messagesEl.innerHTML = "";
       if (!Array.isArray(messages) || messages.length === 0) {
-        messagesEl.innerHTML = '<div class="empty">Send a message to start a session-backed assistant thread.</div>';
+        messagesEl.innerHTML = `<div class="empty">${messageEmptyState()}</div>`;
         return;
       }
 
@@ -355,6 +375,15 @@
     function updateSession(session) {
       statusEl.textContent = session.status || "unknown";
       agentEl.textContent = session.agent || widgetAgent;
+      if (session.status === "waiting") {
+        widgetNoteEl.textContent = "This widget thread is waiting on workflow progress, approval, or retry handling.";
+      } else if (session.status === "recovered") {
+        widgetNoteEl.textContent = "This widget thread has recovered from an earlier waiting or errored state.";
+      } else if (session.status === "errored") {
+        widgetNoteEl.textContent = "The last widget request errored. You can start a new thread or retry.";
+      } else {
+        widgetNoteEl.textContent = "Widget access stays scoped to this browser session and the configured host policy.";
+      }
       renderMessages(session.messages || []);
     }
 
@@ -394,7 +423,7 @@
       sessionToken = payload.session_token || null;
       persistSessionCredentials(sessionId, sessionToken);
       updateSession({ ...payload, messages: [] });
-      setStatus("Session created.");
+      setStatus("Thread created for this browser.");
       return payload;
     }
 
@@ -453,7 +482,7 @@
         return;
       }
 
-      sendButtonEl.disabled = true;
+      setBusy(true);
       setStatus("Sending...");
       try {
         await ensureSession();
@@ -480,7 +509,7 @@
       } catch (error) {
         setStatus(error.message, true);
       } finally {
-        sendButtonEl.disabled = false;
+        setBusy(false);
       }
     });
 
@@ -491,6 +520,7 @@
       persistSessionCredentials(null, null);
       renderMessages([]);
       statusEl.textContent = "idle";
+      widgetNoteEl.textContent = "A fresh owned widget thread is being created for this browser.";
       setStatus("Starting a fresh thread.");
       try {
         await createSession();
@@ -504,6 +534,8 @@
         if (!originAllowed(parentOrigin)) {
           composerEl.querySelector("textarea").disabled = true;
           composerEl.querySelector("#send-button").disabled = true;
+          newThreadEl.disabled = true;
+          widgetNoteEl.textContent = "This host is outside the widget allowlist for this deployment.";
           setStatus("This host is not allowed to embed the widget.", true);
           return;
         }
@@ -512,6 +544,7 @@
           startPolling();
         } else {
           setStatus("Ready for a first message.");
+          widgetNoteEl.textContent = "This widget will create an owned session in the current browser when you send a message.";
         }
       } catch (error) {
         setStatus(error.message, true);

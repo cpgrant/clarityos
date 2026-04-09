@@ -6,9 +6,10 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.2`
-- Current focus: `v1.3` planning
-- Next planned step: define `v1.3` scope from release experience
+- Latest completed milestone: `v1.3`
+- Current release: `v1.3`
+- Current focus: `v1.4` tooling maturity and capability depth
+- Next planned step: `v1.4` slice 1 tool registry structure
 
 ## Milestones
 
@@ -201,3 +202,181 @@ Release gates:
 - widget deployment posture is explicit
 - operator playbooks are runnable
 - session archive/prune and workflow recovery flows are supportable
+
+## Proposed Next Roadmap
+
+This section is intentionally forward-looking. Unlike the milestones above, these entries are proposed planning targets rather than committed release scope.
+
+15. `v1.3` - assistant quality and grounding
+Status: completed
+
+Goal:
+Make the deployed assistant meaningfully useful by improving answer quality, context grounding, and task structure before broadening channel scope.
+
+Likely focus:
+
+- repo-grounded assistant behavior for docs, codebase, and runtime questions
+- stronger use of explicit tools for retrieval and inspection
+- less repetitive, more structured answer formatting
+- better browser-surface usability and end-to-end validation
+
+Likely use cases:
+
+- browser-first research assistant
+- repo-aware ClarityOS copilot
+- operator-visible troubleshooting assistant
+
+Explicitly not the focus:
+
+- many-channel expansion
+- media-heavy assistant behaviors
+- marketplace-style plugin growth
+
+Current progress note:
+
+- Slice 1 is complete
+- Slice 2 is complete through guarded repo/runtime retrieval, policy-aware controlled external fetches, runtime-ID inspection summaries, and stronger working-answer framing to improve assistant answers without adding a second execution path
+- Slice 3 is complete through browser-surface smoke validation and clearer loading, empty, error, and session-state behavior for `/assistant`, `/operator`, and `/widget`
+- Slice 4 is complete through an explicit `v1.3` release path and measurable assistant-quality gates
+
+16. `v1.4` - tooling maturity and capability depth
+Status: proposed
+
+Goal:
+Strengthen the assistant's explicit tool layer so it can inspect, retrieve, and act usefully without losing ClarityOS's inspectability and policy boundaries.
+
+Likely focus:
+
+- richer repo and runtime inspection tools
+- controlled external retrieval such as `fetch_url` or `http_get`
+- clearer tool argument and output schemas
+- cleaner tool organization as the registry grows
+
+Likely use cases:
+
+- deeper repo and docs research
+- runtime-aware operator assistance
+- more capable structured task execution
+
+Explicitly not the focus:
+
+- broad write or exec-by-default behavior
+- hidden skills or opaque agent magic
+
+17. `v1.5` - memory and continuity maturity
+Status: proposed
+
+Goal:
+Make long-running assistant sessions more coherent through better memory lifecycle controls, continuity summaries, and bounded carry-forward behavior.
+
+Likely focus:
+
+- memory summarization and compaction
+- stronger session continuity across long-lived conversations
+- clearer memory budgeting and carry-forward rules
+- better operator inspection of continuity state
+
+Likely use cases:
+
+- persistent browser-first personal assistant
+- longer-running research threads
+- operator-supported continuity across sessions
+
+Explicitly not the focus:
+
+- broad multi-user shared-memory collaboration
+- opaque long-context dumping into prompts
+
+18. `v1.6` - multi-agent work quality
+Status: proposed
+
+Goal:
+Improve the quality of bounded multi-agent work so delegation produces better outcomes rather than just more parallelism.
+
+Likely focus:
+
+- stronger task decomposition patterns
+- supervisor-style bounded coordination
+- better delegation contracts and role discipline
+- clearer child-result synthesis and failure isolation
+
+Likely use cases:
+
+- planner/researcher/executor workflows
+- bounded multi-agent research and troubleshooting
+- operator-auditable task decomposition
+
+Explicitly not the focus:
+
+- open-ended autonomous agent swarms
+- unbounded delegation depth or fan-out
+
+19. `v1.7` - deployment and operator maturity
+Status: proposed
+
+Goal:
+Make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
+
+Likely focus:
+
+- Podman or container packaging
+- repeatable deployment and runtime profile guidance
+- improved operator ergonomics, monitoring, and maintenance flows
+- cleaner environment and storage layout expectations
+
+Likely use cases:
+
+- repeatable self-hosted assistant deployment
+- cleaner operator onboarding and maintenance
+- more production-friendly local and team setups
+
+Explicitly not the focus:
+
+- hosted hub infrastructure
+- broad SaaS-style multi-tenancy
+
+20. `v1.8` - careful external integration
+Status: proposed
+
+Goal:
+Add one or two narrow integrations beyond the browser surfaces without turning ClarityOS into a many-channel product prematurely.
+
+Likely focus:
+
+- one careful external integration beyond `/assistant` and `/widget`
+- thin adapters that hand work to the existing workflow and session runtime
+- deployment-safe boundary rules for external surfaces
+
+Likely use cases:
+
+- one narrow external assistant touchpoint
+- webhook-driven or controlled integration scenarios
+
+Explicitly not the focus:
+
+- Telegram, Slack, Discord, WhatsApp, and similar sprawl all at once
+- broad channel parity with OpenClaw
+
+21. `v1.9` - product refinement and supported workflows
+Status: proposed
+
+Goal:
+Refine ClarityOS into a clearer, more polished self-hosted assistant product with explicit supported workflows and stronger day-to-day usability.
+
+Likely focus:
+
+- tighter product polish across assistant, operator, and embed surfaces
+- clearer supported assistant workflows and boundaries
+- higher confidence from real usage, reliability, and maintenance feedback
+- release discipline around what is intentionally supported
+
+Likely use cases:
+
+- polished browser-first daily-use assistant
+- clearer self-hosted assistant offering for bounded tasks
+- more credible operator-facing assistant product identity
+
+Explicitly not the focus:
+
+- trying to match OpenClaw channel breadth feature-for-feature
+- broad ecosystem expansion before the core experience is strong

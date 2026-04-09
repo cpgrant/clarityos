@@ -142,6 +142,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(saved.messages[1].role, "assistant")
         self.assertEqual(saved.messages[1].content, "Hello back")
         self.assertEqual(saved.messages[1].status, "completed")
+        self.assertEqual(mock_start_workflow.call_args.kwargs["prompt_context"], [])
 
     @patch("runtime.session.start_workflow")
     def test_append_session_message_marks_recovered_after_waiting_session_succeeds(self, mock_start_workflow) -> None:
@@ -175,6 +176,51 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(result["session"]["status"], "recovered")
         self.assertEqual(saved.status, "recovered")
         self.assertIn("wf-recovered", saved.workflow_ids)
+
+    @patch("runtime.session.start_workflow")
+    def test_assistant_surface_project_question_adds_repo_grounding_context(self, mock_start_workflow) -> None:
+        mock_start_workflow.return_value = {
+            "status": "success",
+            "output": "Grounded answer",
+            "workflow": {
+                "workflow_id": "wf-123",
+                "run_id": "wf-123",
+                "latest_run_id": "wf-123",
+                "artifacts": [],
+            },
+        }
+        session = create_session(agent="researcher", surface="assistant_web")
+
+        append_session_message(
+            session["session_id"],
+            content="How close is ClarityOS to an OpenClaw-like system?",
+        )
+
+        prompt_context = mock_start_workflow.call_args.kwargs["prompt_context"]
+        self.assertGreaterEqual(len(prompt_context), 2)
+        self.assertEqual(prompt_context[0]["source"], "README.md")
+        self.assertEqual(prompt_context[1]["source"], "docs/roadmap.md")
+
+        saved = load_session(session["session_id"])
+        self.assertEqual(saved.messages[0].metadata["grounding"]["profile"], "repo_assistant")
+
+    @patch("runtime.session.start_workflow")
+    def test_embed_widget_non_project_question_does_not_add_grounding_context(self, mock_start_workflow) -> None:
+        mock_start_workflow.return_value = {
+            "status": "success",
+            "output": "Plain answer",
+            "workflow": {
+                "workflow_id": "wf-123",
+                "run_id": "wf-123",
+                "latest_run_id": "wf-123",
+                "artifacts": [],
+            },
+        }
+        session = create_session(agent="researcher", surface="embed_widget")
+
+        append_session_message(session["session_id"], content="What is 2 plus 2?")
+
+        self.assertEqual(mock_start_workflow.call_args.kwargs["prompt_context"], [])
 
     def test_list_sessions_filters_by_status(self) -> None:
         open_session = create_session(title="Open", agent="default")

@@ -344,6 +344,10 @@
       color: var(--danger);
     }
 
+    .status-line.loading {
+      color: var(--muted);
+    }
+
     .pill {
       display: inline-flex;
       align-items: center;
@@ -499,6 +503,58 @@
     function setStatus(message, isError = false) {
       statusLineEl.textContent = message;
       statusLineEl.classList.toggle("error", isError);
+      statusLineEl.classList.toggle("loading", !isError && /loading|refreshing|connecting/i.test(message));
+    }
+
+    function setBusy(isBusy) {
+      connectEl.disabled = isBusy;
+      refreshDashboardEl.disabled = isBusy;
+      reloadSessionsEl.disabled = isBusy;
+    }
+
+    function emptyMarkup(message) {
+      return `<div class="empty">${message}</div>`;
+    }
+
+    function renderDashboardLoading() {
+      sessionsEl.innerHTML = emptyMarkup("Loading sessions...");
+      queueSummaryEl.innerHTML = emptyMarkup("Loading queue health...");
+      queueStatsEl.innerHTML = "";
+      queueEventsEl.innerHTML = emptyMarkup("Waiting for queue events...");
+      workerSummaryEl.innerHTML = emptyMarkup("Loading worker health...");
+      workerStatsEl.innerHTML = "";
+      workerEventsEl.innerHTML = emptyMarkup("Waiting for worker events...");
+    }
+
+    function renderDetailLoading() {
+      sessionHeaderEl.innerHTML = emptyMarkup("Loading selected session...");
+      latestIncidentEl.innerHTML = emptyMarkup("Loading workflow and incident summary...");
+      relatedWorkflowsEl.innerHTML = emptyMarkup("Loading related workflows...");
+      sessionActivityEl.innerHTML = emptyMarkup("Loading recent activity...");
+      sessionContinuityEl.innerHTML = emptyMarkup("Loading continuity view...");
+      continuityMemoriesEl.innerHTML = emptyMarkup("Loading scoped memories...");
+      workflowActionsEl.innerHTML = emptyMarkup("Checking available operator actions...");
+    }
+
+    function renderDetailEmpty(message = "Select a session to inspect its related workflows and incidents.") {
+      sessionHeaderEl.innerHTML = emptyMarkup(message);
+      latestIncidentEl.innerHTML = emptyMarkup("No session selected.");
+      relatedWorkflowsEl.innerHTML = emptyMarkup("No related workflows yet.");
+      sessionActivityEl.innerHTML = emptyMarkup("No recent activity yet.");
+      sessionContinuityEl.innerHTML = emptyMarkup("No continuity data yet.");
+      continuityMemoriesEl.innerHTML = emptyMarkup("No memories to show.");
+      workflowActionsEl.innerHTML = emptyMarkup("No workflow selected.");
+      currentWorkflowActions = null;
+    }
+
+    function renderDetailError(message) {
+      sessionHeaderEl.innerHTML = emptyMarkup(`Could not load the selected session. ${message}`);
+      latestIncidentEl.innerHTML = emptyMarkup("Workflow and incident details are unavailable.");
+      relatedWorkflowsEl.innerHTML = emptyMarkup("Related workflows could not be loaded.");
+      sessionActivityEl.innerHTML = emptyMarkup("Recent activity is unavailable.");
+      sessionContinuityEl.innerHTML = emptyMarkup("Continuity view is unavailable.");
+      continuityMemoriesEl.innerHTML = emptyMarkup("Scoped memories are unavailable.");
+      workflowActionsEl.innerHTML = emptyMarkup("Operator actions are unavailable until the session view loads.");
     }
 
     function operatorHeaders() {
@@ -535,7 +591,7 @@
 
     function kvMarkup(rows) {
       if (!rows.length) {
-        return '<div class="empty">No details available.</div>';
+        return emptyMarkup("No details available.");
       }
       return rows.map((row) => `
         <div class="kv">
@@ -569,7 +625,7 @@
 
     function entryMarkup(items, formatter) {
       if (!Array.isArray(items) || items.length === 0) {
-        return '<div class="empty">Nothing recent.</div>';
+        return emptyMarkup("Nothing recent.");
       }
       return items.map(formatter).join("");
     }
@@ -622,7 +678,7 @@
 
     function renderSessions(sessions) {
       if (!Array.isArray(sessions) || sessions.length === 0) {
-        sessionsEl.innerHTML = '<div class="empty">No sessions available yet.</div>';
+        sessionsEl.innerHTML = emptyMarkup("No sessions available yet.");
         return;
       }
 
@@ -709,7 +765,7 @@
       currentWorkflowActions = null;
 
       if (!control?.current_workflow) {
-        workflowActionsEl.innerHTML = '<div class="empty">No active workflow for this session.</div>';
+        workflowActionsEl.innerHTML = emptyMarkup("No active workflow for this session.");
         return;
       }
 
@@ -728,7 +784,7 @@
       }
 
       if (!actions.length) {
-        workflowActionsEl.innerHTML = '<div class="empty">No operator recovery action is currently available.</div>';
+        workflowActionsEl.innerHTML = emptyMarkup("No operator recovery action is currently available.");
         return;
       }
 
@@ -779,23 +835,23 @@
 
     async function refreshSelectedSession() {
       if (!selectedSessionId) {
-        sessionHeaderEl.innerHTML = '<div class="empty">Select a session to inspect its related workflows and incidents.</div>';
-        latestIncidentEl.innerHTML = '<div class="empty">No session selected.</div>';
-        relatedWorkflowsEl.innerHTML = '<div class="empty">No related workflows yet.</div>';
-        sessionActivityEl.innerHTML = '<div class="empty">No recent activity yet.</div>';
-        sessionContinuityEl.innerHTML = '<div class="empty">No continuity data yet.</div>';
-        continuityMemoriesEl.innerHTML = '<div class="empty">No memories to show.</div>';
-        workflowActionsEl.innerHTML = '<div class="empty">No workflow selected.</div>';
-        currentWorkflowActions = null;
+        renderDetailEmpty();
         return;
       }
 
-      const control = await fetchJson(`/sessions/${selectedSessionId}/control`);
-      renderSessionControl(control);
-      await loadCurrentWorkflowActions(control);
+      renderDetailLoading();
+      try {
+        const control = await fetchJson(`/sessions/${selectedSessionId}/control`);
+        renderSessionControl(control);
+        await loadCurrentWorkflowActions(control);
+      } catch (error) {
+        renderDetailError(error.message);
+        throw error;
+      }
     }
 
     async function refreshDashboard() {
+      renderDashboardLoading();
       const dashboard = await fetchJson("/operator/dashboard?session_limit=20");
 
       renderSessions(dashboard.sessions || []);
@@ -805,11 +861,16 @@
       if (!selectedSessionId && Array.isArray(dashboard.sessions) && dashboard.sessions.length > 0) {
         selectedSessionId = dashboard.sessions[0].session_id;
         window.localStorage.setItem(SELECTED_SESSION_KEY, selectedSessionId);
+      } else if (!Array.isArray(dashboard.sessions) || dashboard.sessions.length === 0) {
+        selectedSessionId = null;
+        window.localStorage.removeItem(SELECTED_SESSION_KEY);
       }
       await refreshSelectedSession();
     }
 
     async function connectAndLoad() {
+      setBusy(true);
+      setStatus("Refreshing operator console...");
       try {
         await loadOperatorAuth();
         if (tokenInputEl.value.trim()) {
@@ -818,9 +879,14 @@
           window.localStorage.removeItem(TOKEN_STORAGE_KEY);
         }
         await refreshDashboard();
-        setStatus("Operator console refreshed.");
+        setStatus(selectedSessionId ? "Operator console refreshed." : "Operator console refreshed. No sessions are available yet.");
       } catch (error) {
         setStatus(error.message, true);
+        if (!selectedSessionId) {
+          renderDetailEmpty("Operator view is ready, but no session could be loaded.");
+        }
+      } finally {
+        setBusy(false);
       }
     }
 

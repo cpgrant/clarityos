@@ -16,6 +16,26 @@ policies:
       - capability: memory_read
       - capability: memory_write
 
+  safe_research_http:
+    allow:
+      - capability: model_call
+      - capability: exec
+        commands:
+          - get_time
+      - capability: file_read
+        paths:
+          - "**"
+      - capability: runtime_read
+      - capability: http
+        domains:
+          - docs.openclaw.ai
+          - platform.openai.com
+          - docs.crewai.com
+    deny:
+      - capability: file_write
+      - capability: memory_read
+      - capability: memory_write
+
   approval_exec:
     allow:
       - capability: model_call
