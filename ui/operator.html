@@ -392,9 +392,9 @@
   <div class="shell">
     <section class="masthead">
       <div>
-        <div class="eyebrow">ClarityOS v1.1</div>
+        <div class="eyebrow">ClarityOS v1.4</div>
         <h1>Operator Console</h1>
-        <p class="lede">A thin control-plane UI for sessions, workflows, incidents, queue health, and worker health. The runtime still owns the real recovery and execution logic.</p>
+        <p class="lede">A thin control-plane UI for sessions, workflows, incidents, queue health, and worker health. The runtime still owns the recovery, maintenance, and execution logic.</p>
       </div>
 
       <div class="auth-bar">
@@ -614,6 +614,38 @@
       return String(value);
     }
 
+    function formatDurationSeconds(value) {
+      if (value === null || value === undefined || value === "") {
+        return "None";
+      }
+      const seconds = Number(value);
+      if (!Number.isFinite(seconds)) {
+        return String(value);
+      }
+      if (seconds < 60) {
+        return `${seconds}s`;
+      }
+
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = Math.floor(seconds % 60);
+      const parts = [];
+      if (days > 0) {
+        parts.push(`${days}d`);
+      }
+      if (hours > 0) {
+        parts.push(`${hours}h`);
+      }
+      if (minutes > 0) {
+        parts.push(`${minutes}m`);
+      }
+      if (parts.length < 2 && remainingSeconds > 0) {
+        parts.push(`${remainingSeconds}s`);
+      }
+      return parts.join(" ");
+    }
+
     function statMarkup(items) {
       return items.map((item) => `
         <div class="stat">
@@ -655,8 +687,8 @@
 
     function renderWorkerHealth(health) {
       workerSummaryEl.innerHTML = kvMarkup([
-        { label: "Max heartbeat age", value: health.max_heartbeat_age_seconds ?? "None" },
-        { label: "Min lease remaining", value: health.min_lease_remaining_seconds ?? "None" },
+        { label: "Max heartbeat age", value: formatDurationSeconds(health.max_heartbeat_age_seconds) },
+        { label: "Min lease remaining", value: formatDurationSeconds(health.min_lease_remaining_seconds) },
         { label: "Orphaned workers", value: (health.orphaned_worker_ids || []).length },
       ]);
       workerStatsEl.innerHTML = statMarkup([
@@ -727,7 +759,7 @@
           <div>Status: ${workflow.status}</div>
           <div>Agent: ${workflow.agent}</div>
           <div>Step: ${workflow.current_step?.step_type || "unknown"}</div>
-          <div>Blocker: ${workflow.incident_rollup?.current_blocker || "None"}</div>
+          <div>Blocker: ${describeEventSummary(workflow.incident_rollup?.current_blocker)}</div>
         </article>
       `);
 

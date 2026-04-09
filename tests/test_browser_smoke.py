@@ -149,6 +149,7 @@ class BrowserSmokeTests(unittest.TestCase):
             html_response = main.operator_surface()
             self.assertEqual(html_response.status_code, 200)
             body = self.response_text(html_response)
+            self.assertIn("ClarityOS v1.4", body)
             self.assertIn("Operator Console", body)
             self.assertIn("session-item", body)
 
