@@ -459,6 +459,18 @@ def normalize_delegation(delegation: dict | None) -> dict:
             delegation.get("allowed_tools"),
             field_name="delegation.allowed_tools",
         ),
+        "task_intent": normalize_optional_string(
+            delegation.get("task_intent"),
+            field_name="delegation.task_intent",
+        ),
+        "expected_output": normalize_optional_string(
+            delegation.get("expected_output"),
+            field_name="delegation.expected_output",
+        ),
+        "completion_criteria": normalize_string_list(
+            delegation.get("completion_criteria"),
+            field_name="delegation.completion_criteria",
+        ),
     }
 
 

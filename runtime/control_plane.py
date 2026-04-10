@@ -165,6 +165,8 @@ def child_workflow_summary(workflow, children: list[dict], missing_child_workflo
                     "workflow_id": child["workflow_id"],
                     "agent": child["agent"],
                     "role": child.get("delegation", {}).get("role"),
+                    "task_intent": child.get("delegation", {}).get("task_intent"),
+                    "expected_output": child.get("delegation", {}).get("expected_output"),
                     "path": child["path"],
                     "error": dict(child["failure"]["error"]) if child["failure"]["error"] is not None else None,
                     "step_id": child["failure"]["step_id"],
@@ -185,6 +187,278 @@ def child_workflow_summary(workflow, children: list[dict], missing_child_workflo
         "missing_child_workflow_ids": list(missing_child_workflow_ids),
         "isolation_state": isolation_state,
         "parent_status": workflow.status,
+    }
+
+
+def child_output_summary(child: dict, *, limit: int = 160) -> str | None:
+    failure = child.get("failure")
+    if isinstance(failure, dict):
+        error = failure.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return truncate_text(message.strip(), limit=limit)
+
+    memory_summaries = []
+    for memory in child.get("memories", [])[:2]:
+        if not isinstance(memory, dict):
+            continue
+        payload_summary = memory.get("payload_summary")
+        if isinstance(payload_summary, str) and payload_summary.strip():
+            memory_summaries.append(payload_summary.strip())
+    if memory_summaries:
+        return truncate_text(" | ".join(memory_summaries), limit=limit)
+
+    artifact_labels = []
+    for artifact in child.get("artifacts", [])[:2]:
+        if not isinstance(artifact, dict):
+            continue
+        name = artifact.get("name")
+        kind = artifact.get("kind")
+        if isinstance(name, str) and name.strip():
+            label = name.strip()
+            if isinstance(kind, str) and kind.strip():
+                label = f"{label} ({kind.strip()})"
+            artifact_labels.append(label)
+    if artifact_labels:
+        suffix = "..." if len(child.get("artifacts", [])) > 2 else ""
+        return truncate_text(f"Artifacts: {', '.join(artifact_labels)}{suffix}", limit=limit)
+
+    request = child.get("request")
+    if isinstance(request, dict):
+        tool_name = request.get("tool")
+        if child.get("status") == "succeeded" and isinstance(tool_name, str) and tool_name.strip():
+            return truncate_text(
+                f"Completed delegated tool task `{tool_name.strip()}` with no persisted summary.",
+                limit=limit,
+            )
+
+    step = child.get("current_step") or {}
+    step_type = step.get("step_type")
+    if child.get("status") == "waiting" and isinstance(step_type, str) and step_type.strip():
+        return f"Waiting on `{step_type.strip()}`."
+    if child.get("status") == "running" and isinstance(step_type, str) and step_type.strip():
+        return f"Running `{step_type.strip()}`."
+    if child.get("status") == "succeeded":
+        return "Completed delegated task with no persisted summary."
+    return None
+
+
+def child_result_brief(child: dict) -> dict:
+    delegation = child.get("delegation", {})
+    current_step_view = child.get("current_step") or {}
+    return {
+        "workflow_id": child.get("workflow_id"),
+        "agent": child.get("agent"),
+        "role": delegation.get("role"),
+        "task_intent": delegation.get("task_intent"),
+        "expected_output": delegation.get("expected_output"),
+        "status": child.get("status"),
+        "path": child.get("path"),
+        "current_step_type": current_step_view.get("step_type"),
+        "current_step_status": current_step_view.get("status"),
+        "memory_count": len(child.get("memories", [])),
+        "artifact_count": len(child.get("artifacts", [])),
+        "output_summary": child_output_summary(child),
+    }
+
+
+def child_synthesis_detail(recommendation: str) -> str:
+    if recommendation == "review_failed_children":
+        return "One or more child workflows failed; inspect failures before synthesizing a parent result."
+    if recommendation == "inspect_missing_children":
+        return "One or more child workflows are missing from persisted state and should be inspected before continuing."
+    if recommendation == "review_partial_results":
+        return "Some child results are ready, but others are still running or waiting."
+    if recommendation == "wait_for_children":
+        return "Child workflows are still running or waiting, so parent synthesis should wait."
+    if recommendation == "synthesize_results":
+        return "Successful child results are ready for bounded parent-side synthesis."
+    return "No child workflow results exist yet."
+
+
+def child_synthesis_summary(
+    workflow,
+    children: list[dict],
+    missing_child_workflow_ids: list[str],
+) -> dict:
+    succeeded_children = [child for child in children if child.get("status") == "succeeded"]
+    active_children = [child for child in children if child.get("status") in {"running", "waiting"}]
+    failed_children = [child for child in children if child.get("status") == "failed"]
+
+    successful_children = [child_result_brief(child) for child in succeeded_children]
+    active_child_briefs = [child_result_brief(child) for child in active_children]
+
+    if missing_child_workflow_ids:
+        recommendation = "inspect_missing_children"
+    elif failed_children:
+        recommendation = "review_failed_children"
+    elif active_children and successful_children:
+        recommendation = "review_partial_results"
+    elif active_children:
+        recommendation = "wait_for_children"
+    elif successful_children:
+        recommendation = "synthesize_results"
+    else:
+        recommendation = "no_child_results"
+
+    summary = (
+        f"{len(successful_children)} successful, {len(active_child_briefs)} active, "
+        f"{len(failed_children)} failed, {len(missing_child_workflow_ids)} missing child workflows."
+    )
+
+    return {
+        "summary": summary,
+        "successful_count": len(successful_children),
+        "active_count": len(active_child_briefs),
+        "failed_count": len(failed_children),
+        "missing_count": len(missing_child_workflow_ids),
+        "ready_for_synthesis": bool(successful_children)
+        and not active_child_briefs
+        and not failed_children
+        and not missing_child_workflow_ids,
+        "recommended_next_action": recommendation,
+        "recommended_next_action_detail": child_synthesis_detail(recommendation),
+        "successful_children": successful_children[:5],
+        "active_children": active_child_briefs[:5],
+        "parent_status": workflow.status,
+    }
+
+
+def child_output_state(child: dict) -> str:
+    if child.get("status") == "failed":
+        return "failed"
+    if child.get("status") in {"running", "waiting"}:
+        return "active"
+
+    summary = child_output_summary(child)
+    if child.get("status") == "succeeded":
+        if summary in {
+            None,
+            "Completed delegated task with no persisted summary.",
+        }:
+            return "result_gap"
+        if isinstance(summary, str) and "with no persisted summary" in summary:
+            return "result_gap"
+        return "reusable_result"
+    return "unknown"
+
+
+def child_contract_flags(child: dict) -> list[str]:
+    delegation = child.get("delegation", {})
+    flags = []
+    if not delegation.get("task_intent"):
+        flags.append("missing_task_intent")
+    if not delegation.get("expected_output"):
+        flags.append("missing_expected_output")
+    completion_criteria = delegation.get("completion_criteria")
+    if not isinstance(completion_criteria, list) or not completion_criteria:
+        flags.append("missing_completion_criteria")
+    if child_output_state(child) == "result_gap":
+        flags.append("missing_reusable_result")
+    return flags
+
+
+def child_audit_brief(child: dict) -> dict:
+    delegation = child.get("delegation", {})
+    flags = child_contract_flags(child)
+    completion_criteria = delegation.get("completion_criteria")
+    return {
+        "workflow_id": child.get("workflow_id"),
+        "agent": child.get("agent"),
+        "role": delegation.get("role"),
+        "assigned_by_workflow_id": delegation.get("assigned_by_workflow_id"),
+        "assigned_by_run_id": delegation.get("assigned_by_run_id"),
+        "task_intent": delegation.get("task_intent"),
+        "expected_output": delegation.get("expected_output"),
+        "completion_criteria_count": len(completion_criteria) if isinstance(completion_criteria, list) else 0,
+        "status": child.get("status"),
+        "output_state": child_output_state(child),
+        "contract_complete": not any(flag.startswith("missing_") and flag != "missing_reusable_result" for flag in flags),
+        "audit_flags": flags,
+        "path": child.get("path"),
+    }
+
+
+def delegation_audit_detail(recommendation: str) -> str:
+    if recommendation == "inspect_contract_gaps":
+        return "One or more child workflows are missing delegation contract detail needed for reliable auditability."
+    if recommendation == "review_delegation_denials":
+        return "Delegation-denied traces were recorded and should be reviewed before continuing."
+    if recommendation == "inspect_result_gaps":
+        return "One or more successful child workflows produced no reusable summarized result."
+    if recommendation == "review_failed_children":
+        return "Delegated child failures are present and should be reviewed for containment and handling."
+    if recommendation == "inspect_missing_children":
+        return "One or more child workflow records are missing from persisted state."
+    return "Delegated child workflows are within the current audit expectations."
+
+
+def delegation_audit_summary(
+    workflow,
+    children: list[dict],
+    missing_child_workflow_ids: list[str],
+    traces: list[dict],
+) -> dict:
+    child_audits = [child_audit_brief(child) for child in children]
+    contract_gap_child_ids = [
+        audit["workflow_id"]
+        for audit in child_audits
+        if not audit["contract_complete"]
+    ]
+    output_gap_child_ids = [
+        audit["workflow_id"]
+        for audit in child_audits
+        if audit["output_state"] == "result_gap"
+    ]
+    failed_child_ids = [
+        audit["workflow_id"]
+        for audit in child_audits
+        if audit["status"] == "failed"
+    ]
+    delegation_denied_trace_ids = [
+        trace["trace_id"]
+        for trace in traces
+        if trace.get("failure_classification") == "delegation_denied"
+    ]
+
+    if contract_gap_child_ids:
+        recommendation = "inspect_contract_gaps"
+    elif delegation_denied_trace_ids:
+        recommendation = "review_delegation_denials"
+    elif output_gap_child_ids:
+        recommendation = "inspect_result_gaps"
+    elif failed_child_ids:
+        recommendation = "review_failed_children"
+    elif missing_child_workflow_ids:
+        recommendation = "inspect_missing_children"
+    else:
+        recommendation = "within_audit_bounds"
+
+    contained_failure_count = len(failed_child_ids) if workflow.status != "failed" else 0
+    propagated_failure_count = len(failed_child_ids) if workflow.status == "failed" else 0
+
+    return {
+        "summary": (
+            f"{len(child_audits)} delegated children, {len(contract_gap_child_ids)} contract gaps, "
+            f"{len(output_gap_child_ids)} output gaps, {len(failed_child_ids)} failed children, "
+            f"{len(delegation_denied_trace_ids)} delegation-denied traces."
+        ),
+        "recommended_next_action": recommendation,
+        "recommended_next_action_detail": delegation_audit_detail(recommendation),
+        "contract_gap_count": len(contract_gap_child_ids),
+        "output_gap_count": len(output_gap_child_ids),
+        "failed_child_count": len(failed_child_ids),
+        "contained_failure_count": contained_failure_count,
+        "propagated_failure_count": propagated_failure_count,
+        "delegation_denied_trace_count": len(delegation_denied_trace_ids),
+        "missing_child_count": len(missing_child_workflow_ids),
+        "contract_gap_child_ids": contract_gap_child_ids,
+        "output_gap_child_ids": output_gap_child_ids,
+        "failed_child_ids": failed_child_ids,
+        "missing_child_workflow_ids": list(missing_child_workflow_ids),
+        "delegation_denied_trace_ids": delegation_denied_trace_ids,
+        "children": child_audits[:5],
     }
 
 
@@ -684,6 +958,13 @@ def workflow_incident_view(workflow_id: str, *, trace_limit: int = 20) -> dict:
     jobs = related_jobs_for_workflow(workflow)
     workers, missing_worker_ids = related_workers_for_jobs(jobs)
     traces = related_trace_summaries_for_workflow(workflow, limit=trace_limit)
+    children, missing_child_workflow_ids = child_workflow_views(workflow)
+    delegation_audit = delegation_audit_summary(
+        workflow,
+        children,
+        missing_child_workflow_ids,
+        traces,
+    )
     incident_traces = incident_trace_summary(traces)
     events = workflow_incident_events(workflow, jobs, workers, traces)
     classifications = incident_classification_summary(events)
@@ -714,6 +995,9 @@ def workflow_incident_view(workflow_id: str, *, trace_limit: int = 20) -> dict:
         "jobs": jobs,
         "workers": workers,
         "missing_worker_ids": missing_worker_ids,
+        "child_workflows": children,
+        "missing_child_workflow_ids": missing_child_workflow_ids,
+        "delegation_audit": delegation_audit,
         "traces": traces,
         "timelines": {
             **timelines,
@@ -950,8 +1234,15 @@ def workflow_control_view(workflow_id: str) -> dict:
     workers, missing_worker_ids = related_workers_for_jobs(jobs)
     children, missing_child_workflow_ids = child_workflow_views(workflow)
     child_summary = child_workflow_summary(workflow, children, missing_child_workflow_ids)
+    child_synthesis = child_synthesis_summary(workflow, children, missing_child_workflow_ids)
     recovery = workflow_recovery_summary(workflow, jobs, workers, missing_worker_ids)
     traces = related_trace_summaries_for_workflow(workflow, limit=10)
+    delegation_audit = delegation_audit_summary(
+        workflow,
+        children,
+        missing_child_workflow_ids,
+        traces,
+    )
     incident = incident_trace_summary(traces)
     incident_events = workflow_incident_events(workflow, jobs, workers, traces)
     correlation_ids = workflow_correlation_ids(workflow, approvals, jobs, workers, traces)
@@ -999,6 +1290,8 @@ def workflow_control_view(workflow_id: str) -> dict:
         },
         "child_workflows": children,
         "child_summary": child_summary,
+        "child_synthesis": child_synthesis,
+        "delegation_audit": delegation_audit,
         "failure": workflow_failure_view(workflow),
         "missing_child_workflow_ids": missing_child_workflow_ids,
         "actions": workflow_actions(workflow, approvals),

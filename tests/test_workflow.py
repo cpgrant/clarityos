@@ -330,6 +330,9 @@ class WorkflowTests(unittest.TestCase):
                 "assigned_by_run_id": "run-parent",
                 "allowed_capabilities": ["model_call"],
                 "allowed_tools": [],
+                "task_intent": "Summarize the parent findings",
+                "expected_output": "Short summary with next actions",
+                "completion_criteria": ["Include three concrete findings"],
             },
             shared_memories=[
                 {
@@ -346,6 +349,9 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(snapshot["delegation"]["role"], "summarizer")
         self.assertEqual(snapshot["delegation"]["allowed_capabilities"], ["model_call"])
+        self.assertEqual(snapshot["delegation"]["task_intent"], "Summarize the parent findings")
+        self.assertEqual(snapshot["delegation"]["expected_output"], "Short summary with next actions")
+        self.assertEqual(snapshot["delegation"]["completion_criteria"], ["Include three concrete findings"])
         self.assertEqual(snapshot["shared_memories"][0]["memory_id"], "memory-123")
 
     def test_write_and_load_workflow_persists_delegation_and_shared_memory(self) -> None:
@@ -362,6 +368,9 @@ class WorkflowTests(unittest.TestCase):
                 "assigned_by_run_id": "run-parent",
                 "allowed_capabilities": ["model_call"],
                 "allowed_tools": [],
+                "task_intent": "Summarize the parent findings",
+                "expected_output": "Short summary with next actions",
+                "completion_criteria": ["Include three concrete findings"],
             },
             shared_memories=[
                 {
@@ -379,6 +388,9 @@ class WorkflowTests(unittest.TestCase):
 
         self.assertEqual(loaded.delegation["role"], "summarizer")
         self.assertEqual(loaded.delegation["allowed_capabilities"], ["model_call"])
+        self.assertEqual(loaded.delegation["task_intent"], "Summarize the parent findings")
+        self.assertEqual(loaded.delegation["expected_output"], "Short summary with next actions")
+        self.assertEqual(loaded.delegation["completion_criteria"], ["Include three concrete findings"])
         self.assertEqual(loaded.shared_memories[0]["memory_id"], "memory-123")
 
     def test_configure_subrun_policy_accepts_delegation_bounds(self) -> None:

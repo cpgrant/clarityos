@@ -120,6 +120,8 @@ def inspect_workflow_tool(args: dict) -> dict:
             "recent_events": incident.get("recent_events", []),
         },
         "child_summary": dict(view.get("child_summary", {})),
+        "child_synthesis": dict(view.get("child_synthesis", {})),
+        "delegation_audit": dict(view.get("delegation_audit", {})),
         "actions": dict(view.get("actions", {})),
     }
 

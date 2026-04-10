@@ -11,6 +11,7 @@ from runtime.workflow import (
     can_spawn_child_workflow,
     current_step,
     load_workflow,
+    normalize_optional_string,
     register_child_workflow,
     write_workflow,
 )
@@ -66,6 +67,12 @@ def normalize_role(role: object, *, agent_name: str) -> str:
     return role.strip()
 
 
+def normalize_user_input(user_input: object) -> str:
+    if not isinstance(user_input, str):
+        raise ValueError("Workflow `input` must be a string")
+    return user_input.strip()
+
+
 def normalize_memory_ids(shared_memory_ids: object) -> list[str]:
     return normalize_string_list(shared_memory_ids, field_name="shared_memory_ids")
 
@@ -108,13 +115,19 @@ def ensure_subset(
 def build_child_delegation(
     parent,
     *,
+    user_input: str,
     agent_name: str,
     tool_name: str | None,
     role: object,
     allowed_capabilities: object,
     allowed_tools: object,
+    task_intent: object,
+    expected_output: object,
+    completion_criteria: object,
 ) -> dict:
     ensure_requested_agent_allowed(parent, agent_name)
+    normalized_role = normalize_role(role, agent_name=agent_name)
+    normalized_user_input = normalize_user_input(user_input)
 
     capability = requested_capability(tool_name)
     child_allowed_capabilities = normalize_string_list(
@@ -154,12 +167,45 @@ def build_child_delegation(
             parent_workflow_id=parent.workflow_id,
         )
 
+    normalized_task_intent = normalize_optional_string(
+        task_intent,
+        field_name="task_intent",
+    )
+    if normalized_task_intent is None:
+        if normalized_user_input:
+            normalized_task_intent = normalized_user_input
+        else:
+            raise ValueError("Workflow child delegation requires either `input` or `task_intent`")
+
+    normalized_expected_output = normalize_optional_string(
+        expected_output,
+        field_name="expected_output",
+    )
+    if normalized_expected_output is None:
+        if tool_name is not None:
+            normalized_expected_output = f"Bounded tool result for `{tool_name}` plus a concise summary"
+        else:
+            normalized_expected_output = f"Concise bounded result from the delegated `{normalized_role}` task"
+
+    normalized_completion_criteria = normalize_string_list(
+        completion_criteria,
+        field_name="completion_criteria",
+    )
+    if not normalized_completion_criteria:
+        normalized_completion_criteria = [
+            "Stay within the delegated capabilities and tool bounds.",
+            "Return a bounded result that satisfies the expected output.",
+        ]
+
     return {
-        "role": normalize_role(role, agent_name=agent_name),
+        "role": normalized_role,
         "assigned_by_workflow_id": parent.workflow_id,
         "assigned_by_run_id": parent.latest_run_id,
         "allowed_capabilities": child_allowed_capabilities,
         "allowed_tools": child_allowed_tools,
+        "task_intent": normalized_task_intent,
+        "expected_output": normalized_expected_output,
+        "completion_criteria": normalized_completion_criteria,
     }
 
 
@@ -202,6 +248,9 @@ def start_child_workflow(
     role: str | None = None,
     allowed_capabilities: list[str] | None = None,
     allowed_tools: list[str] | None = None,
+    task_intent: str | None = None,
+    expected_output: str | None = None,
+    completion_criteria: list[str] | None = None,
     shared_memory_ids: list[str] | None = None,
     job_id: str | None = None,
     worker_id: str | None = None,
@@ -211,11 +260,15 @@ def start_child_workflow(
         raise ValueError(f"Workflow `{parent_workflow_id}` cannot spawn more child workflows")
     delegation = build_child_delegation(
         parent,
+        user_input=user_input,
         agent_name=agent_name,
         tool_name=tool_name,
         role=role,
         allowed_capabilities=allowed_capabilities,
         allowed_tools=allowed_tools,
+        task_intent=task_intent,
+        expected_output=expected_output,
+        completion_criteria=completion_criteria,
     )
     shared_memories = materialize_shared_memories(
         parent,

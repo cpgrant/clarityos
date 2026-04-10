@@ -465,6 +465,9 @@ class ApiTests(unittest.TestCase):
                 "agent": "researcher",
                 "role": "summarizer",
                 "allowed_capabilities": ["model_call"],
+                "task_intent": "Summarize the bug report",
+                "expected_output": "Short summary with next actions",
+                "completion_criteria": ["Keep the result under 5 lines"],
                 "shared_memory_ids": ["memory-123"],
             }
         )
@@ -482,6 +485,9 @@ class ApiTests(unittest.TestCase):
                 "role": "summarizer",
                 "allowed_capabilities": ["model_call"],
                 "allowed_tools": None,
+                "task_intent": "Summarize the bug report",
+                "expected_output": "Short summary with next actions",
+                "completion_criteria": ["Keep the result under 5 lines"],
                 "shared_memory_ids": ["memory-123"],
             },
             priority=100,
@@ -1006,6 +1012,9 @@ class ApiTests(unittest.TestCase):
                 "role": "summarizer",
                 "allowed_capabilities": ["exec"],
                 "allowed_tools": ["echo"],
+                "task_intent": "Summarize the repo findings",
+                "expected_output": "Short bullet summary with source notes",
+                "completion_criteria": ["Use echo only", "Keep the result under 5 lines"],
                 "shared_memory_ids": ["memory-123"],
             },
         )
@@ -1020,6 +1029,9 @@ class ApiTests(unittest.TestCase):
             role="summarizer",
             allowed_capabilities=["exec"],
             allowed_tools=["echo"],
+            task_intent="Summarize the repo findings",
+            expected_output="Short bullet summary with source notes",
+            completion_criteria=["Use echo only", "Keep the result under 5 lines"],
             shared_memory_ids=["memory-123"],
         )
 

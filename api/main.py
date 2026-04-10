@@ -830,6 +830,9 @@ def queue_job_request(payload: dict):
         job_payload["role"] = payload.get("role")
         job_payload["allowed_capabilities"] = payload.get("allowed_capabilities")
         job_payload["allowed_tools"] = payload.get("allowed_tools")
+        job_payload["task_intent"] = payload.get("task_intent")
+        job_payload["expected_output"] = payload.get("expected_output")
+        job_payload["completion_criteria"] = payload.get("completion_criteria")
         job_payload["shared_memory_ids"] = payload.get("shared_memory_ids")
 
     return create_job(
@@ -1532,6 +1535,9 @@ def workflow_spawn_subrun(
             role=payload.get("role"),
             allowed_capabilities=payload.get("allowed_capabilities"),
             allowed_tools=payload.get("allowed_tools"),
+            task_intent=payload.get("task_intent"),
+            expected_output=payload.get("expected_output"),
+            completion_criteria=payload.get("completion_criteria"),
             shared_memory_ids=payload.get("shared_memory_ids"),
         )
     except Exception as exc:

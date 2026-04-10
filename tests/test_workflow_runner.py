@@ -122,6 +122,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 role="summarizer",
                 allowed_capabilities=["exec"],
                 allowed_tools=["echo"],
+                task_intent="Summarize the repo findings",
+                expected_output="Short bullet summary with source notes",
+                completion_criteria=["Use echo only", "Keep the result under 5 lines"],
             )
 
         self.assertEqual(response["status"], "success")
@@ -143,12 +146,50 @@ class WorkflowRunnerTests(unittest.TestCase):
                 "assigned_by_run_id": "wf-parent",
                 "allowed_capabilities": ["exec"],
                 "allowed_tools": ["echo"],
+                "task_intent": "Summarize the repo findings",
+                "expected_output": "Short bullet summary with source notes",
+                "completion_criteria": ["Use echo only", "Keep the result under 5 lines"],
             },
         )
         self.assertEqual(mock_run_agent.call_args.kwargs["shared_memories"], [])
         child_workflow_id = mock_run_agent.call_args.kwargs["run_id"]
         reloaded_parent = workflow.load_workflow("wf-parent")
         self.assertEqual(reloaded_parent.child_workflow_ids, [child_workflow_id])
+
+    def test_start_child_workflow_derives_default_contract_from_user_input(self) -> None:
+        parent = workflow.create_workflow_state(
+            run_id="wf-parent",
+            agent="default",
+            run_type="model",
+            request={"input": "parent", "agent": "default", "tool": None, "tool_args": None},
+        )
+        workflow.configure_subrun_policy(parent, {"max_children": 1, "max_depth": 1})
+        workflow.write_workflow(parent)
+
+        with patch.object(
+            workflow_runner,
+            "run_agent",
+            return_value={"status": "success", "workflow": {"workflow_id": "wf-child"}},
+        ) as mock_run_agent:
+            workflow_runner.start_child_workflow(
+                "wf-parent",
+                user_input="Investigate the failing child workflow",
+                agent_name="researcher",
+            )
+
+        delegation = mock_run_agent.call_args.kwargs["delegation"]
+        self.assertEqual(delegation["task_intent"], "Investigate the failing child workflow")
+        self.assertEqual(
+            delegation["expected_output"],
+            "Concise bounded result from the delegated `researcher` task",
+        )
+        self.assertEqual(
+            delegation["completion_criteria"],
+            [
+                "Stay within the delegated capabilities and tool bounds.",
+                "Return a bounded result that satisfies the expected output.",
+            ],
+        )
 
     def test_start_child_workflow_materializes_shared_memory(self) -> None:
         parent = workflow.create_workflow_state(
@@ -233,6 +274,26 @@ class WorkflowRunnerTests(unittest.TestCase):
                 user_input="child",
                 agent_name="researcher",
                 shared_memory_ids=[unrelated_memory["memory_id"]],
+            )
+
+    def test_start_child_workflow_requires_input_or_task_intent(self) -> None:
+        parent = workflow.create_workflow_state(
+            run_id="wf-parent",
+            agent="default",
+            run_type="model",
+            request={"input": "parent", "agent": "default", "tool": None, "tool_args": None},
+        )
+        workflow.configure_subrun_policy(parent, {"max_children": 1, "max_depth": 1})
+        workflow.write_workflow(parent)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Workflow child delegation requires either `input` or `task_intent`",
+        ):
+            workflow_runner.start_child_workflow(
+                "wf-parent",
+                user_input="",
+                agent_name="researcher",
             )
 
     def test_start_child_workflow_registers_failed_child_lineage(self) -> None:

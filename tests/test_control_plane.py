@@ -126,6 +126,9 @@ class ControlPlaneTests(unittest.TestCase):
                 "assigned_by_run_id": parent.workflow_id,
                 "allowed_capabilities": ["model_call"],
                 "allowed_tools": [],
+                "task_intent": "Summarize the parent workflow",
+                "expected_output": "Short summary with the blocker",
+                "completion_criteria": ["Mention the pending approval"],
             },
             shared_memories=[memory.memory_summary(saved_memory)],
         )
@@ -147,6 +150,10 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(len(view["child_workflows"]), 1)
         self.assertEqual(view["child_workflows"][0]["workflow_id"], "wf-child")
         self.assertEqual(view["child_workflows"][0]["delegation"]["role"], "summarizer")
+        self.assertEqual(
+            view["child_workflows"][0]["delegation"]["task_intent"],
+            "Summarize the parent workflow",
+        )
         self.assertEqual(view["child_workflows"][0]["shared_memories"][0]["memory_id"], saved_memory["memory_id"])
         self.assertEqual(view["correlation_ids"]["workflow_ids"], ["wf-parent"])
         self.assertEqual(view["correlation_ids"]["approval_ids"], [approval_record["approval_id"]])
@@ -271,10 +278,150 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(view["child_summary"]["isolation_state"], "contained")
         self.assertEqual(view["child_summary"]["failed_children"][0]["workflow_id"], "wf-child-failed")
         self.assertTrue(view["child_summary"]["failed_children"][0]["isolated_from_parent"])
+        self.assertEqual(view["child_synthesis"]["recommended_next_action"], "review_failed_children")
+        self.assertEqual(view["child_synthesis"]["successful_count"], 1)
+        self.assertEqual(view["child_synthesis"]["failed_count"], 1)
         self.assertEqual(view["child_workflows"][0]["path"], "/workflows/wf-child-failed")
         self.assertEqual(view["child_workflows"][0]["failure"]["error"]["message"], "child exploded")
         self.assertEqual(view["actions"]["child_workflows"][0]["path"], "/workflows/wf-child-failed")
         self.assertIsNone(view["failure"])
+
+    def test_workflow_control_view_exposes_child_result_synthesis(self) -> None:
+        parent = workflow.create_workflow_state(
+            run_id="wf-parent",
+            agent="default",
+            run_type="model",
+        )
+        workflow.configure_subrun_policy(parent, {"max_children": 2, "max_depth": 2})
+
+        succeeded_child = workflow.create_workflow_state(
+            run_id="wf-child-ok",
+            agent="researcher",
+            run_type="model",
+            parent_workflow_id=parent.workflow_id,
+            root_workflow_id=parent.workflow_id,
+            depth=1,
+            delegation={
+                "role": "summarizer",
+                "assigned_by_workflow_id": parent.workflow_id,
+                "assigned_by_run_id": parent.workflow_id,
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+                "task_intent": "Summarize the root cause",
+                "expected_output": "Short bounded findings summary",
+                "completion_criteria": ["Include the root cause"],
+            },
+        )
+        saved_memory = memory.create_memory(
+            memory_type="summary",
+            scope_kind="workflow",
+            workflow_id=succeeded_child.workflow_id,
+            run_id=succeeded_child.run_id,
+            agent="researcher",
+            payload={"text": "Root cause narrowed to stale worker lease handling."},
+        )
+        workflow.register_memory(succeeded_child, memory.memory_summary(saved_memory))
+        workflow.complete_workflow(succeeded_child)
+        workflow.write_workflow(succeeded_child)
+
+        waiting_child = workflow.create_workflow_state(
+            run_id="wf-child-waiting",
+            agent="researcher",
+            run_type="model",
+            parent_workflow_id=parent.workflow_id,
+            root_workflow_id=parent.workflow_id,
+            depth=1,
+            delegation={
+                "role": "researcher",
+                "assigned_by_workflow_id": parent.workflow_id,
+                "assigned_by_run_id": parent.workflow_id,
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+                "task_intent": "Check the retry path",
+                "expected_output": "Short bounded retry analysis",
+                "completion_criteria": ["State whether retries are implicated"],
+            },
+        )
+        approval_record = approval.create_approval(
+            run_id="wf-child-waiting",
+            workflow_id=waiting_child.workflow_id,
+            agent="researcher",
+            policy_name="approval_exec",
+            action={"capability": "exec", "tool": "echo", "command": "echo", "path": None},
+            reason="needs approval",
+            request={"input": "", "agent": "researcher", "tool": "echo", "tool_args": {"text": "hi"}},
+        )
+        workflow.wait_for_approval(waiting_child, approval_id=approval_record["approval_id"])
+        workflow.write_workflow(waiting_child)
+
+        workflow.register_child_workflow(parent, child_workflow_id=succeeded_child.workflow_id)
+        workflow.register_child_workflow(parent, child_workflow_id=waiting_child.workflow_id)
+        workflow.write_workflow(parent)
+
+        view = workflow_control_view(parent.workflow_id)
+
+        self.assertEqual(view["child_synthesis"]["recommended_next_action"], "review_partial_results")
+        self.assertFalse(view["child_synthesis"]["ready_for_synthesis"])
+        self.assertEqual(view["child_synthesis"]["successful_count"], 1)
+        self.assertEqual(view["child_synthesis"]["active_count"], 1)
+        self.assertEqual(
+            view["child_synthesis"]["successful_children"][0]["task_intent"],
+            "Summarize the root cause",
+        )
+        self.assertIn(
+            "Root cause narrowed to stale worker lease handling.",
+            view["child_synthesis"]["successful_children"][0]["output_summary"],
+        )
+        self.assertEqual(
+            view["child_synthesis"]["active_children"][0]["task_intent"],
+            "Check the retry path",
+        )
+
+    def test_workflow_control_view_exposes_delegation_audit_gaps(self) -> None:
+        parent = workflow.create_workflow_state(
+            run_id="wf-parent",
+            agent="default",
+            run_type="model",
+        )
+        workflow.configure_subrun_policy(parent, {"max_children": 2, "max_depth": 2})
+
+        legacy_child = workflow.create_workflow_state(
+            run_id="wf-child-legacy",
+            agent="researcher",
+            run_type="model",
+            parent_workflow_id=parent.workflow_id,
+            root_workflow_id=parent.workflow_id,
+            depth=1,
+            delegation={
+                "role": "researcher",
+                "assigned_by_workflow_id": parent.workflow_id,
+                "assigned_by_run_id": parent.workflow_id,
+                "allowed_capabilities": ["model_call"],
+                "allowed_tools": [],
+            },
+        )
+        workflow.complete_workflow(legacy_child)
+        workflow.write_workflow(legacy_child)
+
+        workflow.register_child_workflow(parent, child_workflow_id=legacy_child.workflow_id)
+        workflow.write_workflow(parent)
+
+        view = workflow_control_view(parent.workflow_id)
+
+        self.assertEqual(view["delegation_audit"]["recommended_next_action"], "inspect_contract_gaps")
+        self.assertEqual(view["delegation_audit"]["contract_gap_count"], 1)
+        self.assertEqual(view["delegation_audit"]["output_gap_count"], 1)
+        self.assertEqual(view["delegation_audit"]["contract_gap_child_ids"], ["wf-child-legacy"])
+        self.assertEqual(view["delegation_audit"]["output_gap_child_ids"], ["wf-child-legacy"])
+        self.assertEqual(
+            view["delegation_audit"]["children"][0]["audit_flags"],
+            [
+                "missing_task_intent",
+                "missing_expected_output",
+                "missing_completion_criteria",
+                "missing_reusable_result",
+            ],
+        )
 
     def test_workflow_control_view_exposes_safe_resume_and_replay_actions(self) -> None:
         waiting = workflow.create_workflow_state(
@@ -501,6 +648,60 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(incident["incident"]["rollup"]["first_failure"]["source"], "workflow")
         self.assertEqual(incident["incident"]["rollup"]["latest_failure"]["source"], "trace")
         self.assertEqual(incident["incident"]["rollup"]["current_blocker"]["kind"], "runtime_error")
+
+    def test_workflow_incident_view_exposes_delegation_audit_traces(self) -> None:
+        parent = workflow.create_workflow_state(
+            run_id="wf-parent",
+            agent="default",
+            run_type="model",
+            request={"input": "hello", "agent": "default", "tool": None, "tool_args": None},
+        )
+        workflow.configure_subrun_policy(parent, {"max_children": 2, "max_depth": 2})
+        workflow.write_workflow(parent)
+
+        trace_path = trace.trace_run(
+            {
+                "run_id": "wf-child-denied",
+                "parent_run_id": parent.latest_run_id,
+                "status": "error",
+                "agent": "researcher",
+                "workflow": {
+                    "workflow_id": parent.workflow_id,
+                    "latest_run_id": parent.latest_run_id,
+                    "status": parent.status,
+                },
+                "correlation_ids": {
+                    "run_ids": ["wf-child-denied", parent.latest_run_id],
+                    "workflow_ids": [parent.workflow_id],
+                    "job_ids": [],
+                    "worker_ids": [],
+                    "approval_ids": [],
+                    "artifact_ids": [],
+                    "memory_ids": [],
+                    "shared_memory_ids": [],
+                    "child_workflow_ids": [],
+                    "delegation": {
+                        "assigned_by_workflow_id": parent.workflow_id,
+                        "assigned_by_run_id": parent.latest_run_id,
+                    },
+                },
+                "result": {
+                    "error": {
+                        "error_type": "DelegationDeniedError",
+                        "message": "delegation says no",
+                    }
+                },
+            }
+        )
+
+        incident = workflow_incident_view(parent.workflow_id)
+
+        self.assertEqual(incident["delegation_audit"]["recommended_next_action"], "review_delegation_denials")
+        self.assertEqual(incident["delegation_audit"]["delegation_denied_trace_count"], 1)
+        self.assertEqual(
+            incident["delegation_audit"]["delegation_denied_trace_ids"],
+            [trace_path.name],
+        )
 
     def test_workflow_incident_summary_view_exposes_compact_rollup(self) -> None:
         state = workflow.create_workflow_state(

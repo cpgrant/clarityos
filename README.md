@@ -6,9 +6,16 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 - Current release: `v1.5`
 - Current focus: `v1.6` multi-agent work quality
-- Next target: begin `v1.6` with stronger delegation contracts, bounded supervisor coordination, and clearer child-result synthesis
+- Next target: validate `v1.6` against its release path and decide whether to cut the `v1.6` release
 
 Direction after `v1.5`: `v1.6` prioritizes multi-agent work quality so bounded delegation produces better outcomes instead of just more parallelism.
+
+The active `v1.6` execution plan now lives in `docs/v1.6-checklist.md`.
+
+`v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
+`v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
+`v1.6` Slice 3 is complete through delegated-run audit summaries, contract-gap and output-gap surfacing, and delegation-denied trace visibility in incident review.
+`v1.6` Slice 4 is complete through an explicit release path for the first bounded multi-agent workflow profile, including supported shape, out-of-scope boundaries, and release gates.
 
 `v1.4` is complete through a cleaner explicit tool registry, stronger bounded retrieval outputs, and narrow runtime-maintenance action tools that stay policy-scoped and operator-safe.
 
@@ -23,6 +30,9 @@ Direction after `v1.5`: `v1.6` prioritizes multi-agent work quality so bounded d
 `v1.5` Slice 4 is complete through an explicit release path for the first memory-maturity use case, including supported shape, out-of-scope boundaries, and release gates.
 
 Recent release notes live in `docs/v1.5-memory-strategy.md`, `docs/differentiators.md`, and `docs/v1.5-release-path.md`.
+
+`v1.6` now begins the next quality layer for bounded multi-agent work: stronger delegation contracts, supervisor-style coordination, clearer child-result synthesis, and better failure inspection.
+Companion planning notes for `v1.6` live in `docs/differentiators.md` and `docs/v1.6-release-path.md`.
 
 After `v1.5`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
 
@@ -65,6 +75,17 @@ Given an input, ClarityOS:
 4. Returns a structured response
 5. Writes a full execution trace
 
+## Top Example Use Cases
+
+- Repo-aware assistant for one codebase: answer questions about code, docs, architecture, and runtime behavior using explicit bounded retrieval instead of vague chat responses
+- Long-running research or planning threads: keep a topic coherent across many turns with persisted session continuity, summaries, and bounded carry-forward
+- Runtime troubleshooting assistant: inspect workflows, jobs, workers, incidents, and recovery state to help explain what failed and what should happen next
+- Operator support console: give operators a browser surface for session inspection, workflow recovery, continuity review, and maintenance decisions
+- Structured multi-step task execution: run bounded workflow-backed tasks with explicit state, traces, and inspectable intermediate results
+- Embeddable self-hosted assistant: power a narrow browser-first assistant through `/assistant`, `/widget`, and `/widget.js`
+
+ClarityOS is intentionally better suited to supportable, inspectable assistant work than to open-ended autonomous behavior, hidden learning, or many-channel consumer assistant sprawl.
+
 ## Architecture
 
 ```text
@@ -103,6 +124,8 @@ clarityos/
 │   ├── v1.5-checklist.md
 │   ├── v1.5-memory-strategy.md
 │   ├── v1.5-release-path.md
+│   ├── v1.6-checklist.md
+│   ├── v1.6-release-path.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
