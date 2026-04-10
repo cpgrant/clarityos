@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant User
+    participant Surface as Assistant or Widget Surface
+    participant API as FastAPI
+    participant Session as Session Layer
+    participant Workflow as Workflow Runner
+    participant Agent as Agent Runtime
+    participant Provider as Model or Tool
+    participant State as JSON State
+
+    User->>Surface: Submit message
+    Surface->>API: POST /sessions/{session_id}/messages
+    API->>Session: append_session_message(...)
+    Session->>Session: Build grounding context when applicable
+    Session->>Workflow: start_workflow(...)
+    Workflow->>Agent: run_agent(...)
+    Agent->>Provider: Call model or allowed tool
+    Provider-->>Agent: Result
+    Agent->>State: Persist workflow, trace, memory, artifact state
+    Session->>State: Persist session state
+    API-->>Surface: output, workflow status, ids
+    Surface-->>User: Render reply or waiting state

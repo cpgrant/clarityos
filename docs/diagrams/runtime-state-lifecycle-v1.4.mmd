@@ -1,0 +1,146 @@
+%%{init: {'flowchart': {'nodeSpacing': 20, 'rankSpacing': 28}}}%%
+flowchart TB
+    subgraph ROW_1[ ]
+        direction LR
+        subgraph SESSION[Session Lifecycle]
+            direction TB
+            subgraph SESSION_ROW_1[ ]
+                direction LR
+                S_OPEN[open]
+                S_ACTIVE[active]
+                S_WAIT[waiting]
+            end
+
+            subgraph SESSION_ROW_2[ ]
+                direction LR
+                S_ERROR[errored]
+                S_RECOVERED[recovered]
+                S_ARCHIVED[archived]
+            end
+
+            S_OPEN ~~~ S_ERROR
+            S_ACTIVE ~~~ S_RECOVERED
+            S_WAIT ~~~ S_ARCHIVED
+
+            S_OPEN --> S_ACTIVE
+            S_OPEN --> S_WAIT
+            S_OPEN --> S_ERROR
+            S_OPEN --> S_ARCHIVED
+
+            S_ACTIVE --> S_ACTIVE
+            S_ACTIVE --> S_WAIT
+            S_ACTIVE --> S_ERROR
+            S_ACTIVE --> S_ARCHIVED
+
+            S_WAIT --> S_ACTIVE
+            S_WAIT --> S_WAIT
+            S_WAIT --> S_ERROR
+            S_WAIT --> S_RECOVERED
+            S_WAIT --> S_ARCHIVED
+
+            S_ERROR --> S_ACTIVE
+            S_ERROR --> S_WAIT
+            S_ERROR --> S_RECOVERED
+            S_ERROR --> S_ARCHIVED
+
+            S_RECOVERED --> S_ACTIVE
+            S_RECOVERED --> S_WAIT
+            S_RECOVERED --> S_ERROR
+            S_RECOVERED --> S_ARCHIVED
+        end
+
+        subgraph WORKFLOW[Workflow Lifecycle]
+            direction TB
+            subgraph WORKFLOW_ROW_1[ ]
+                direction LR
+                W_RUN[running]
+                W_WAIT[waiting]
+            end
+
+            subgraph WORKFLOW_ROW_2[ ]
+                direction LR
+                W_SUCCESS[succeeded]
+                W_FAIL[failed]
+            end
+
+            W_RUN ~~~ W_SUCCESS
+            W_WAIT ~~~ W_FAIL
+
+            W_RUN --> W_WAIT
+            W_RUN --> W_SUCCESS
+            W_RUN --> W_FAIL
+            W_WAIT --> W_RUN
+            W_WAIT --> W_FAIL
+        end
+    end
+
+    subgraph ROW_2[ ]
+        direction LR
+        subgraph JOB[Job Lifecycle]
+            direction TB
+            subgraph JOB_ROW_1[ ]
+                direction LR
+                J_SCHED[scheduled]
+                J_QUEUE[queued]
+                J_RUN[running]
+            end
+
+            subgraph JOB_ROW_2[ ]
+                direction LR
+                J_DONE[completed]
+                J_FAIL[failed]
+                J_DEAD[dead_letter]
+                J_CANCEL[canceled]
+            end
+
+            J_SCHED ~~~ J_DONE
+            J_QUEUE ~~~ J_FAIL
+            J_RUN ~~~ J_DEAD
+
+            J_SCHED --> J_QUEUE
+            J_QUEUE --> J_RUN
+            J_RUN --> J_DONE
+            J_RUN --> J_FAIL
+            J_RUN --> J_SCHED
+            J_RUN --> J_QUEUE
+            J_RUN --> J_CANCEL
+            J_FAIL --> J_QUEUE
+            J_FAIL --> J_SCHED
+            J_DEAD --> J_QUEUE
+            J_DEAD --> J_SCHED
+            J_SCHED --> J_CANCEL
+            J_QUEUE --> J_CANCEL
+        end
+
+        subgraph WORKER[Worker Lifecycle]
+            direction TB
+            subgraph WORKER_ROW_1[ ]
+                direction LR
+                K_IDLE[idle]
+                K_BUSY[busy]
+            end
+
+            subgraph WORKER_ROW_2[ ]
+                direction LR
+                K_EXPIRED[expired lease while holding job]
+            end
+
+            K_BUSY ~~~ K_EXPIRED
+
+            K_IDLE --> K_BUSY
+            K_BUSY --> K_IDLE
+            K_BUSY --> K_EXPIRED
+            K_EXPIRED --> K_IDLE
+        end
+    end
+
+    style ROW_1 fill:none,stroke:none
+    style ROW_2 fill:none,stroke:none
+    style SESSION_ROW_1 fill:none,stroke:none
+    style SESSION_ROW_2 fill:none,stroke:none
+    style WORKFLOW_ROW_1 fill:none,stroke:none
+    style WORKFLOW_ROW_2 fill:none,stroke:none
+    style JOB_ROW_1 fill:none,stroke:none
+    style JOB_ROW_2 fill:none,stroke:none
+    style WORKER_ROW_1 fill:none,stroke:none
+    style WORKER_ROW_2 fill:none,stroke:none

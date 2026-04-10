@@ -1,0 +1,33 @@
+flowchart LR
+    AU[Assistant User]
+    EV[Embedded Site Visitor]
+    HS[Host Web App or Site]
+    OP[Operator]
+    MP[(OpenAI API or Ollama)]
+
+    subgraph DEPLOY[Self-Hosted ClarityOS Deployment]
+        API[FastAPI Service]
+        AS[Assistant Surface]
+        WG[Widget Surface and Loader]
+        CP[Operator Control Plane]
+        RT[Runtime, Continuity, and Workflow Engine]
+        STATE[(Persisted JSON State)]
+    end
+
+    AU -->|uses| AS
+    AS -->|HTTP| API
+
+    EV -->|opens widget| HS
+    HS -->|embeds /widget.js and iframe| WG
+    WG -->|HTTP| API
+
+    OP -->|operates and inspects| CP
+    CP -->|HTTP| API
+
+    API --> RT
+    RT --> STATE
+    RT -->|model calls| MP
+
+    API --> AS
+    API --> WG
+    API --> CP

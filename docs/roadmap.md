@@ -6,13 +6,12 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.5`
-- Current release: `v1.5`
-- Current focus: `v1.6` multi-agent work quality
-- Next planned step: validate `v1.6` against its release gates and decide whether to cut the `v1.6` release
-- Active execution plan: [`docs/v1.6-checklist.md`](./v1.6-checklist.md)
-- Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.6-release-path.md`](./v1.6-release-path.md)
-- Recent release notes: [`docs/v1.5-memory-strategy.md`](./v1.5-memory-strategy.md), [`docs/differentiators.md`](./differentiators.md), and [`docs/v1.5-release-path.md`](./v1.5-release-path.md)
+- Latest completed milestone: `v1.6`
+- Current release: `v1.6`
+- Current focus: `v1.7` deployment and operator maturity
+- Next planned step: turn `v1.7` into a concrete execution checklist and release path
+- Current planning surface: this roadmap, with `v1.7` still in proposed state
+- Recent release notes: [`docs/v1.6-checklist.md`](./v1.6-checklist.md), [`docs/v1.6-release-path.md`](./v1.6-release-path.md), [`docs/architecture-v1.6.md`](./architecture-v1.6.md), and [`docs/history/v1.6.md`](./history/v1.6.md)
 
 ## Milestones
 
@@ -314,7 +313,7 @@ Explicitly not the focus:
 - opaque long-context dumping into prompts
 
 18. `v1.6` - multi-agent work quality
-Status: in progress
+Status: completed
 
 Goal:
 Improve the quality of bounded multi-agent work so delegation produces better outcomes rather than just more parallelism.
@@ -327,21 +326,21 @@ Companion notes:
 
 Current progress note:
 
-- `v1.6` is now the active milestone with a concrete execution checklist
+- `v1.6` is now the current release
 - Slice 1 is complete through explicit delegation contract fields, default bounded child-task briefs, earlier validation for invalid subruns, and control-plane visibility for child task intent
 - Slice 2 is complete through bounded child-result synthesis, supervisor-style next-action guidance, and clearer child rollups in workflow inspection
 - Slice 3 is complete through delegated-run audit summaries, contract-gap and result-gap surfacing, and delegation-denied trace visibility in incident review
 - Slice 4 is complete through an explicit `v1.6` release path and release gates for higher-quality bounded multi-agent work
-- The next planned step is release validation and milestone closeout for `v1.6`
+- Release validation and milestone closeout have passed for `v1.6`
 
-Planned focus:
+Delivered focus:
 
 - stronger task decomposition patterns
 - supervisor-style bounded coordination
 - better delegation contracts and role discipline
 - clearer child-result synthesis and failure isolation
 
-Planned use cases:
+Delivered use cases:
 
 - planner/researcher/executor workflows
 - bounded multi-agent research and troubleshooting
@@ -351,6 +350,7 @@ Explicitly not the focus:
 
 - open-ended autonomous agent swarms
 - unbounded delegation depth or fan-out
+- hidden multi-agent orchestration that only exists in prompts
 
 19. `v1.7` - deployment and operator maturity
 Status: proposed

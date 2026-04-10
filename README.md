@@ -4,13 +4,15 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.5`
-- Current focus: `v1.6` multi-agent work quality
-- Next target: validate `v1.6` against its release path and decide whether to cut the `v1.6` release
+- Current release: `v1.6`
+- Current focus: `v1.7` deployment and operator maturity
+- Next target: turn `v1.7` into a concrete execution checklist and release path
 
-Direction after `v1.5`: `v1.6` prioritizes multi-agent work quality so bounded delegation produces better outcomes instead of just more parallelism.
+Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
-The active `v1.6` execution plan now lives in `docs/v1.6-checklist.md`.
+The completed `v1.6` execution plan lives in `docs/v1.6-checklist.md`.
+
+`v1.6` is now the current release. It completes the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
 
 `v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
 `v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
@@ -29,12 +31,12 @@ The active `v1.6` execution plan now lives in `docs/v1.6-checklist.md`.
 
 `v1.5` Slice 4 is complete through an explicit release path for the first memory-maturity use case, including supported shape, out-of-scope boundaries, and release gates.
 
-Recent release notes live in `docs/v1.5-memory-strategy.md`, `docs/differentiators.md`, and `docs/v1.5-release-path.md`.
+Recent release notes live in `docs/v1.6-checklist.md`, `docs/v1.6-release-path.md`, `docs/architecture-v1.6.md`, and `docs/history/v1.6.md`.
 
-`v1.6` now begins the next quality layer for bounded multi-agent work: stronger delegation contracts, supervisor-style coordination, clearer child-result synthesis, and better failure inspection.
-Companion planning notes for `v1.6` live in `docs/differentiators.md` and `docs/v1.6-release-path.md`.
+`v1.7` is the next milestone to shape. It should focus on deployment repeatability, operator ergonomics, and clearer packaged runtime expectations rather than expanding autonomy.
+Companion planning notes that still frame the current release line live in `docs/differentiators.md`, `docs/v1.5-memory-strategy.md`, and `docs/v1.6-release-path.md`.
 
-After `v1.5`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
+After `v1.6`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -64,6 +66,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v1.3.md`
 - `docs/history/v1.4.md`
 - `docs/history/v1.5.md`
+- `docs/history/v1.6.md`
 
 ## What It Does
 
@@ -92,6 +95,8 @@ ClarityOS is intentionally better suited to supportable, inspectable assistant w
 API -> Agent -> Prompt/Tool -> Model/Tool Result -> Response
 ```
 
+Released architecture snapshots live in `docs/architecture-v1.6.md` and `docs/architecture-v1.4.md`.
+
 ## Project Structure
 
 ```text
@@ -101,6 +106,10 @@ clarityos/
 ├── api/
 │   └── main.py
 ├── docs/
+│   ├── architecture-v1.4.md
+│   ├── architecture-v1.6.md
+│   ├── architecture.md
+│   ├── diagrams/
 │   ├── playbooks/
 │   │   ├── README.md
 │   │   ├── incident-response.md
@@ -139,7 +148,8 @@ clarityos/
 │       ├── v1.2.md
 │       ├── v1.3.md
 │       ├── v1.4.md
-│       └── v1.5.md
+│       ├── v1.5.md
+│       └── v1.6.md
 ├── memories/
 ├── sessions/
 ├── jobs/
@@ -1525,7 +1535,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.5` is the current release. `v1.6` is now the next milestone, focused on multi-agent work quality.
+`v1.6` is the current release. `v1.7` is now the next milestone, focused on deployment and operator maturity.
 
 ### `v1.1` Acceptance Criteria
 

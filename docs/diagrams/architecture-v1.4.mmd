@@ -1,0 +1,43 @@
+flowchart LR
+    AU[Assistant User]
+    EV[Embedded Site Visitor]
+    OP[Operator]
+
+    AS[Assistant Surface<br/>/assistant]
+    WG[Widget Surface<br/>/widget and /widget.js]
+    OS[Operator Surface<br/>/operator]
+
+    API[FastAPI Service]
+    SES[Session Layer]
+    WF[Workflow Runner]
+    AG[Agent Runtime]
+    Q[Job Queue]
+    WK[Workers]
+    CP[Control Plane]
+
+    FS[(Persisted JSON State<br/>sessions workflows jobs workers memories approvals artifacts)]
+    LLM[(OpenAI or Ollama)]
+
+    AU --> AS --> API
+    EV --> WG --> API
+    OP --> OS --> API
+
+    API --> SES
+    API --> WF
+    API --> Q
+    API --> WK
+    API --> CP
+
+    SES --> WF
+    WF --> AG
+    AG --> LLM
+    AG --> FS
+    WF --> FS
+    SES --> FS
+    Q --> FS
+    WK --> Q
+    WK --> WF
+    WK --> FS
+    CP --> FS
+    CP --> Q
+    CP --> WK
