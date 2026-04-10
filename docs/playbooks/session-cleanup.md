@@ -10,7 +10,11 @@
 
 1. Inspect `GET /sessions/{session_id}/control` for any session you plan to archive.
 2. Confirm `maintenance.recommendation` and whether the session is still linked to active workflow work.
-3. Verify the target sessions are in a cleanup-safe status:
+3. Inspect `continuity.budget` and `continuity.active_summary` when the session is long-running:
+   - compact when `continuity.budget.recommendation` is `compact_now`
+   - recompact when `continuity.budget.recommendation` is `recompact_now`
+   - review the bounded carry-forward summary before maintenance changes
+4. Verify the target sessions are in a cleanup-safe status:
    - `archived`
    - `errored`
    - `recovered`
@@ -26,6 +30,8 @@
    - `statuses=["archived"]`
    - small `limit`
    - explicit `older_than_hours`
+5. For long-running active sessions with continuity budget pressure, compact before archive/prune decisions:
+   - `POST /sessions/{session_id}/continuity/compact`
 
 ## Guardrails
 

@@ -58,6 +58,7 @@ from runtime.session import (
     SESSION_STATE_SCHEMA,
     archive_session,
     append_session_message as append_message_to_session,
+    compact_session_continuity,
     create_session,
     list_sessions,
     load_session,
@@ -97,7 +98,7 @@ OPERATOR_UI_PATH = BASE_DIR / "ui" / "operator.html"
 WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
 WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
 
-app = FastAPI(title="ClarityOS", version="1.4.0")
+app = FastAPI(title="ClarityOS", version="1.5.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
 SESSION_AUTH_HEADER = DEFAULT_SESSION_AUTH_HEADER
@@ -748,6 +749,25 @@ def session_archive(
         require_operator_auth(x_operator_token)
         body = payload or {}
         return archive_session(session_id, reason=body.get("reason"))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/sessions/{session_id}/continuity/compact")
+def session_continuity_compact(
+    session_id: str,
+    payload: dict | None = None,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        body = payload or {}
+        return compact_session_continuity(
+            session_id,
+            keep_recent_messages=body.get("keep_recent_messages", 6),
+            memory_limit=body.get("memory_limit", 10),
+            max_summary_chars=body.get("max_summary_chars", 1200),
+        )
     except Exception as exc:
         return error_response(exc)
 

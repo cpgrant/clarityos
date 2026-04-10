@@ -648,12 +648,68 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(view["continuity"]["scope"]["kind"], "workflow")
         self.assertEqual(view["continuity"]["recent"][0]["memory_id"], saved_memory["memory_id"])
         self.assertFalse(view["continuity"]["message_memory_gap"])
+        self.assertEqual(view["continuity"]["recent_count"], 1)
+        self.assertEqual(view["continuity"]["workflow_recent_count"], 1)
         self.assertEqual(view["actions"]["append_message_path"], f"/sessions/{record['session_id']}/messages")
         self.assertEqual(view["actions"]["archive_session_path"], f"/sessions/{record['session_id']}/archive")
+        self.assertEqual(view["actions"]["compact_continuity_path"], f"/sessions/{record['session_id']}/continuity/compact")
         self.assertEqual(view["actions"]["prune_sessions_path"], "/sessions/prune")
         self.assertEqual(view["maintenance"]["surface"], None)
         self.assertTrue(view["maintenance"]["archive_eligible"])
         self.assertTrue(any(event["source"] == "session" for event in view["activity"]["recent_timeline"]))
+
+    def test_session_control_view_exposes_active_continuity_compaction(self) -> None:
+        record = session.create_session(title="Research thread", agent="researcher")
+        loaded_session = session.load_session(record["session_id"])
+        loaded_session.messages = [
+            session.SessionMessage(
+                message_id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+                status="completed",
+                created_at=f"2026-01-01T00:00:0{index}+00:00",
+                agent="researcher",
+            )
+            for index in range(8)
+        ]
+        session.write_session(loaded_session)
+
+        session.compact_session_continuity(record["session_id"], keep_recent_messages=2, max_summary_chars=180)
+
+        view = session_control_view(record["session_id"])
+
+        self.assertEqual(view["continuity"]["compaction_count"], 1)
+        self.assertIsNotNone(view["continuity"]["active_compaction"])
+        self.assertIsNotNone(view["continuity"]["active_summary"])
+        self.assertEqual(view["continuity"]["active_compaction"]["message_count"], 6)
+        self.assertIn("Carry-forward summary for this session.", view["continuity"]["active_summary"]["summary"])
+        self.assertFalse(view["continuity"]["message_memory_gap"])
+        self.assertTrue(any(event["source"] == "continuity" for event in view["activity"]["recent_timeline"]))
+
+    def test_session_control_view_surfaces_continuity_budget_recommendation(self) -> None:
+        record = session.create_session(title="Long thread", agent="default")
+        loaded_session = session.load_session(record["session_id"])
+        loaded_session.messages = [
+            session.SessionMessage(
+                message_id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+                status="completed",
+                created_at=f"2026-01-01T00:00:{index:02d}+00:00",
+                agent="default",
+            )
+            for index in range(13)
+        ]
+        session.write_session(loaded_session)
+
+        view = session_control_view(record["session_id"])
+
+        self.assertEqual(view["continuity"]["budget"]["recommendation"], "compact_now")
+        self.assertTrue(view["continuity"]["budget"]["action_needed"])
+        self.assertEqual(
+            view["continuity"]["budget"]["action_path"],
+            f"/sessions/{record['session_id']}/continuity/compact",
+        )
 
     def test_operator_dashboard_view_aggregates_sessions_and_runtime_health(self) -> None:
         first = session.create_session(title="One", agent="researcher")

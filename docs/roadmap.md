@@ -6,10 +6,11 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.4`
-- Current release: `v1.4`
-- Current focus: `v1.5` memory and continuity maturity
-- Next planned step: `v1.5` slice 1 memory summarization and compaction
+- Latest completed milestone: `v1.5`
+- Current release: `v1.5`
+- Current focus: `v1.6` multi-agent work quality
+- Next planned step: shape `v1.6` into an execution checklist and begin the first slice around stronger delegation contracts and supervisor-style bounded coordination
+- Recent release notes: [`docs/v1.5-memory-strategy.md`](./v1.5-memory-strategy.md), [`docs/differentiators.md`](./differentiators.md), and [`docs/v1.5-release-path.md`](./v1.5-release-path.md)
 
 ## Milestones
 
@@ -213,14 +214,14 @@ Status: completed
 Goal:
 Make the deployed assistant meaningfully useful by improving answer quality, context grounding, and task structure before broadening channel scope.
 
-Likely focus:
+Delivered focus:
 
 - repo-grounded assistant behavior for docs, codebase, and runtime questions
 - stronger use of explicit tools for retrieval and inspection
 - less repetitive, more structured answer formatting
 - better browser-surface usability and end-to-end validation
 
-Likely use cases:
+Delivered use cases:
 
 - browser-first research assistant
 - repo-aware ClarityOS copilot
@@ -245,14 +246,14 @@ Status: completed
 Goal:
 Strengthen the assistant's explicit tool layer so it can inspect, retrieve, and act usefully without losing ClarityOS's inspectability and policy boundaries.
 
-Likely focus:
+Delivered focus:
 
 - richer repo and runtime inspection tools
 - controlled external retrieval such as `fetch_url` or `http_get`
 - clearer tool argument and output schemas
 - cleaner tool organization as the registry grows
 
-Likely use cases:
+Delivered use cases:
 
 - deeper repo and docs research
 - runtime-aware operator assistance
@@ -273,19 +274,33 @@ Explicitly not the focus:
 - hidden skills or opaque agent magic
 
 17. `v1.5` - memory and continuity maturity
-Status: proposed
+Status: completed
 
 Goal:
 Make long-running assistant sessions more coherent through better memory lifecycle controls, continuity summaries, and bounded carry-forward behavior.
 
-Likely focus:
+Companion notes:
+
+- [`docs/v1.5-memory-strategy.md`](./v1.5-memory-strategy.md)
+- [`docs/differentiators.md`](./differentiators.md)
+- [`docs/v1.5-release-path.md`](./v1.5-release-path.md)
+
+Current progress note:
+
+- Slice 1 is complete through explicit session continuity compaction helpers, persisted compaction metadata with source references, an operator-invoked compaction path, and control-plane visibility for active continuity state
+- Slice 2 is complete through session-level continuity summaries, bounded carry-forward context for assistant turns, and visibility for continuity summaries in session and control-plane state
+- Slice 3 is complete through continuity budget rules, operator-facing recommendations for compact/recompact decisions, and playbook guidance for continuity cleanup flows
+- Slice 4 is complete through an explicit `v1.5` release path and release gates for memory and continuity maturity
+- `v1.5` is now the current release, and follow-on work moves to `v1.6` multi-agent work quality
+
+Delivered focus:
 
 - memory summarization and compaction
 - stronger session continuity across long-lived conversations
 - clearer memory budgeting and carry-forward rules
 - better operator inspection of continuity state
 
-Likely use cases:
+Delivered use cases:
 
 - persistent browser-first personal assistant
 - longer-running research threads

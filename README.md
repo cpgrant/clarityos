@@ -4,17 +4,27 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.4`
-- Current focus: `v1.5` memory and continuity maturity
-- Next target: `v1.5` slice 1 memory summarization and compaction
+- Current release: `v1.5`
+- Current focus: `v1.6` multi-agent work quality
+- Next target: begin `v1.6` with stronger delegation contracts, bounded supervisor coordination, and clearer child-result synthesis
 
-Direction after `v1.4`: `v1.5` prioritizes memory and continuity maturity, making longer-running assistant sessions more coherent without slipping into opaque long-context dumping.
+Direction after `v1.5`: `v1.6` prioritizes multi-agent work quality so bounded delegation produces better outcomes instead of just more parallelism.
 
 `v1.4` is complete through a cleaner explicit tool registry, stronger bounded retrieval outputs, and narrow runtime-maintenance action tools that stay policy-scoped and operator-safe.
 
-`v1.5` now begins the memory and continuity layer: summarization, compaction, carry-forward rules, and stronger operator visibility for long-running browser-first assistant sessions.
+`v1.5` completes the memory and continuity layer: summarization, compaction, carry-forward rules, stronger operator visibility, and a narrow release path for long-running browser-first assistant sessions.
 
-For `v1.4`, the action side remains intentionally runtime-maintenance-only. Repo write helpers are still explicitly deferred beyond this release.
+`v1.5` Slice 1 is complete through explicit session continuity compaction helpers, persisted compaction metadata with source references, and operator-visible continuity state.
+
+`v1.5` Slice 2 is complete through persisted session-level continuity summaries, bounded carry-forward for assistant turns, and visibility for continuity summaries in session and control-plane state.
+
+`v1.5` Slice 3 is complete through explicit continuity budget rules, operator-facing compact/recompact recommendations, and continuity cleanup guidance in the session playbook.
+
+`v1.5` Slice 4 is complete through an explicit release path for the first memory-maturity use case, including supported shape, out-of-scope boundaries, and release gates.
+
+Recent release notes live in `docs/v1.5-memory-strategy.md`, `docs/differentiators.md`, and `docs/v1.5-release-path.md`.
+
+After `v1.5`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -43,6 +53,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v1.2.md`
 - `docs/history/v1.3.md`
 - `docs/history/v1.4.md`
+- `docs/history/v1.5.md`
 
 ## What It Does
 
@@ -77,6 +88,7 @@ clarityos/
 │   │   ├── worker-repair.md
 │   │   └── workflow-recovery.md
 │   ├── production-profile.md
+│   ├── differentiators.md
 │   ├── roadmap.md
 │   ├── v0.9-checklist.md
 │   ├── v1.0-checklist.md
@@ -89,6 +101,8 @@ clarityos/
 │   ├── v1.4-checklist.md
 │   ├── v1.4-release-path.md
 │   ├── v1.5-checklist.md
+│   ├── v1.5-memory-strategy.md
+│   ├── v1.5-release-path.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md
@@ -101,7 +115,8 @@ clarityos/
 │       ├── v1.1.md
 │       ├── v1.2.md
 │       ├── v1.3.md
-│       └── v1.4.md
+│       ├── v1.4.md
+│       └── v1.5.md
 ├── memories/
 ├── sessions/
 ├── jobs/
@@ -1487,7 +1502,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.4` is the current release. `v1.5` is now the next milestone, focused on memory and continuity maturity.
+`v1.5` is the current release. `v1.6` is now the next milestone, focused on multi-agent work quality.
 
 ### `v1.1` Acceptance Criteria
 

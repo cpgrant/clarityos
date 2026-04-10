@@ -4,7 +4,13 @@ from runtime.approval import approval_summary, list_approvals_for_workflow
 from runtime.artifact import artifact_summary, list_artifacts_for_workflow
 from runtime.memory import list_memories, memory_summary
 from runtime.queue import job_lease_expired, list_jobs, queue_health_summary, requeue_job, reschedule_job
-from runtime.session import list_sessions, load_session, session_snapshot
+from runtime.session import (
+    list_sessions,
+    load_session,
+    session_continuity_budget,
+    session_continuity_snapshot,
+    session_snapshot,
+)
 from runtime.trace import list_traces, trace_timeline
 from runtime.worker import load_worker, update_worker, worker_health_summary
 from runtime.workflow import can_spawn_child_workflow, current_step, load_workflow, workflow_snapshot
@@ -39,6 +45,18 @@ def truncate_text(value: str | None, *, limit: int = 120) -> str | None:
     if len(value) <= limit:
         return value
     return value[: limit - 3].rstrip() + "..."
+
+
+def continuity_recommendation_detail(recommendation: str) -> str:
+    if recommendation == "compact_now":
+        return "Older session history has grown past the initial compaction threshold."
+    if recommendation == "recompact_now":
+        return "Too many post-compaction messages are active; run continuity compaction again."
+    if recommendation == "refresh_summary":
+        return "Compaction exists but the active continuity summary is missing."
+    if recommendation == "monitor_budget":
+        return "Carry-forward is still bounded, but one or more continuity windows are at their configured limits."
+    return "Continuity is within its current carry-forward budget."
 
 
 def session_cleanup_summary(session) -> dict:
@@ -1011,10 +1029,18 @@ def session_memory_continuity(session, *, limit: int = 10) -> dict:
     scope = dict(session.memory_scope)
     scope_kind = scope["kind"]
     scope_value = scope.get("value")
+    compaction = session_continuity_snapshot(session)
     continuity = {
         "scope": scope,
         "recent": [],
+        "recent_count": 0,
         "workflow_recent": [],
+        "workflow_recent_count": 0,
+        "active_compaction": compaction["active_compaction"],
+        "active_summary": compaction["active_summary"],
+        "compaction_count": compaction["compaction_count"],
+        "last_compacted_at": compaction["updated_at"],
+        "budget": session_continuity_budget(session),
         "message_memory_gap": len(session.messages) == 0,
     }
 
@@ -1028,6 +1054,7 @@ def session_memory_continuity(session, *, limit: int = 10) -> dict:
         scoped = list_memories(scope_kind="run", run_id=scope_value, limit=limit) if scope_value else []
 
     continuity["recent"] = [memory_summary(memory) for memory in scoped]
+    continuity["recent_count"] = len(continuity["recent"])
 
     workflow_memories = []
     seen = set()
@@ -1044,7 +1071,14 @@ def session_memory_continuity(session, *, limit: int = 10) -> dict:
             break
 
     continuity["workflow_recent"] = workflow_memories
-    continuity["message_memory_gap"] = bool(session.messages) and not continuity["recent"] and not continuity["workflow_recent"]
+    continuity["workflow_recent_count"] = len(workflow_memories)
+    continuity["message_memory_gap"] = (
+        bool(session.messages)
+        and continuity["active_summary"] is None
+        and not continuity["recent"]
+        and not continuity["workflow_recent"]
+    )
+    continuity["budget"]["detail"] = continuity_recommendation_detail(continuity["budget"]["recommendation"])
     return continuity
 
 
@@ -1148,6 +1182,21 @@ def session_current_workflow_view(session, workflow_views: list[dict]) -> dict |
 
 def session_activity_timeline(session, current_workflow: dict | None, latest_incident: dict | None) -> list[dict]:
     events = []
+    for entry in session.transition_history:
+        if entry.get("event_type") != "continuity_compacted":
+            continue
+        events.append(
+            {
+                "source": "continuity",
+                "event_type": "continuity_compacted",
+                "timestamp": entry.get("timestamp"),
+                "message": (
+                    f"Compacted {entry.get('compacted_message_count')} older messages "
+                    f"with strategy {entry.get('strategy')}"
+                ),
+                "compaction_id": entry.get("compaction_id"),
+            }
+        )
     for message in session.messages:
         events.append(
             {
@@ -1212,6 +1261,8 @@ def session_control_view(session_id: str) -> dict:
         else None
     )
     continuity = session_memory_continuity(session)
+    continuity["budget"]["action_path"] = f"/sessions/{session.session_id}/continuity/compact"
+    continuity["budget"]["action_needed"] = continuity["budget"]["recommendation"] in {"compact_now", "recompact_now", "refresh_summary"}
     rollup = session_workflow_rollup(workflows, missing_workflow_ids)
     message_rollup = session_message_rollup(session)
     current_workflow = session_current_workflow_view(session, workflow_views)
@@ -1243,6 +1294,7 @@ def session_control_view(session_id: str) -> dict:
         "actions": {
             "append_message_path": f"/sessions/{session.session_id}/messages",
             "archive_session_path": f"/sessions/{session.session_id}/archive",
+            "compact_continuity_path": f"/sessions/{session.session_id}/continuity/compact",
             "prune_sessions_path": "/sessions/prune",
             "current_workflow_path": (
                 f"/workflows/{session.current_workflow_id}"

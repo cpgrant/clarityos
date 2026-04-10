@@ -7,10 +7,13 @@ from unittest.mock import patch
 from runtime.session import (
     archive_session,
     append_session_message,
+    compact_session_continuity,
     create_session,
     list_sessions,
     load_session,
     prune_sessions,
+    SessionMessage,
+    session_continuity_budget,
     session_token_hash,
     verify_session_access,
     write_session,
@@ -234,6 +237,208 @@ class SessionTests(unittest.TestCase):
 
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0]["session_id"], open_session["session_id"])
+
+    def test_compact_session_continuity_persists_explicit_summary_and_sources(self) -> None:
+        session = create_session(title="Thread", agent="researcher")
+        loaded = load_session(session["session_id"])
+        loaded.workflow_ids = ["wf-1"]
+        loaded.messages = [
+            SessionMessage(
+                message_id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+                status="completed",
+                created_at=f"2026-01-01T00:00:0{index}+00:00",
+                agent="researcher",
+                workflow_id="wf-1",
+                run_id="wf-1",
+            )
+            for index in range(8)
+        ]
+        write_session(loaded)
+
+        with patch("runtime.session.list_memories") as mock_list_memories:
+            mock_list_memories.side_effect = [
+                [
+                    {
+                        "memory_id": "memory-scope-1",
+                        "memory_type": "summary",
+                        "scope": {"kind": "agent", "value": "researcher"},
+                        "agent": "researcher",
+                        "workflow_id": None,
+                        "run_id": None,
+                        "payload": {"text": "scope summary"},
+                        "tags": ["session"],
+                        "metadata": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                [
+                    {
+                        "memory_id": "memory-workflow-1",
+                        "memory_type": "summary",
+                        "scope": {"kind": "workflow", "value": "wf-1"},
+                        "agent": "researcher",
+                        "workflow_id": "wf-1",
+                        "run_id": None,
+                        "payload": {"text": "workflow summary"},
+                        "tags": ["session"],
+                        "metadata": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                [
+                    {
+                        "memory_id": "memory-scope-1",
+                        "memory_type": "summary",
+                        "scope": {"kind": "agent", "value": "researcher"},
+                        "agent": "researcher",
+                        "workflow_id": None,
+                        "run_id": None,
+                        "payload": {"text": "scope summary"},
+                        "tags": ["session"],
+                        "metadata": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                [
+                    {
+                        "memory_id": "memory-workflow-1",
+                        "memory_type": "summary",
+                        "scope": {"kind": "workflow", "value": "wf-1"},
+                        "agent": "researcher",
+                        "workflow_id": "wf-1",
+                        "run_id": None,
+                        "payload": {"text": "workflow summary"},
+                        "tags": ["session"],
+                        "metadata": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+            ]
+
+            result = compact_session_continuity(
+                session["session_id"],
+                keep_recent_messages=3,
+                memory_limit=5,
+                max_summary_chars=240,
+            )
+
+        self.assertTrue(result["compacted"])
+        self.assertEqual(result["reason"], "compacted")
+        self.assertEqual(result["compaction"]["message_count"], 5)
+        self.assertEqual(result["compaction"]["retained_message_ids"], ["message-5", "message-6", "message-7"])
+        self.assertEqual(result["compaction"]["source_memory_ids"], ["memory-scope-1", "memory-workflow-1"])
+        self.assertIn("Compacted 5 earlier messages", result["compaction"]["summary"])
+
+        saved = load_session(session["session_id"])
+        active = saved.metadata["continuity"]["compactions"][0]
+        self.assertEqual(saved.metadata["continuity"]["active_compaction_id"], active["compaction_id"])
+        self.assertEqual(active["source_workflow_ids"], ["wf-1"])
+        self.assertIn("active_summary", saved.metadata["continuity"])
+        self.assertEqual(saved.metadata["continuity"]["active_summary"]["based_on_compaction_id"], active["compaction_id"])
+        self.assertEqual(saved.transition_history[-1]["event_type"], "continuity_compacted")
+
+    def test_compact_session_continuity_returns_noop_when_not_enough_messages(self) -> None:
+        session = create_session(title="Short", agent="default")
+        loaded = load_session(session["session_id"])
+        loaded.messages = [
+            SessionMessage(
+                message_id="message-1",
+                role="user",
+                content="hello",
+                status="completed",
+                created_at="2026-01-01T00:00:00+00:00",
+                agent="default",
+            ),
+            SessionMessage(
+                message_id="message-2",
+                role="assistant",
+                content="hi",
+                status="completed",
+                created_at="2026-01-01T00:00:01+00:00",
+                agent="default",
+            ),
+        ]
+        write_session(loaded)
+
+        result = compact_session_continuity(session["session_id"], keep_recent_messages=3)
+
+        self.assertFalse(result["compacted"])
+        self.assertEqual(result["reason"], "not_enough_messages")
+
+    @patch("runtime.session.start_workflow")
+    def test_append_session_message_includes_bounded_continuity_prompt_context(self, mock_start_workflow) -> None:
+        session = create_session(agent="default")
+        loaded = load_session(session["session_id"])
+        loaded.workflow_ids = ["wf-1"]
+        loaded.current_workflow_id = "wf-1"
+        loaded.messages = [
+            SessionMessage(
+                message_id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+                status="completed",
+                created_at=f"2026-01-01T00:00:0{index}+00:00",
+                agent="default",
+                workflow_id="wf-1",
+                run_id="wf-1",
+            )
+            for index in range(8)
+        ]
+        write_session(loaded)
+
+        with patch("runtime.session.list_memories", return_value=[]):
+            compact_session_continuity(session["session_id"], keep_recent_messages=3, memory_limit=3, max_summary_chars=220)
+
+            mock_start_workflow.return_value = {
+                "status": "success",
+                "output": "Continued answer",
+                "workflow": {
+                    "workflow_id": "wf-continued",
+                    "run_id": "wf-continued",
+                    "latest_run_id": "wf-continued",
+                    "artifacts": [],
+                },
+            }
+
+            append_session_message(session["session_id"], content="Please continue")
+
+        prompt_context = mock_start_workflow.call_args.kwargs["prompt_context"]
+        self.assertEqual(prompt_context[0]["source"], f"session_continuity:{session['session_id']}")
+        self.assertIn("Carry-forward summary for this session.", prompt_context[0]["content"])
+        self.assertNotIn("Please continue", prompt_context[0]["content"])
+
+        saved = load_session(session["session_id"])
+        active_summary = saved.metadata["continuity"]["active_summary"]
+        self.assertEqual(active_summary["carry_forward"]["recent_message_count"], 4)
+        self.assertEqual(active_summary["carry_forward"]["current_workflow_id"], "wf-continued")
+
+    def test_session_continuity_budget_recommends_initial_compaction_when_message_count_grows(self) -> None:
+        session = create_session(agent="default")
+        loaded = load_session(session["session_id"])
+        loaded.messages = [
+            SessionMessage(
+                message_id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+                status="completed",
+                created_at=f"2026-01-01T00:00:{index:02d}+00:00",
+                agent="default",
+            )
+            for index in range(13)
+        ]
+        write_session(loaded)
+
+        budget = session_continuity_budget(load_session(session["session_id"]))
+
+        self.assertEqual(budget["recommendation"], "compact_now")
+        self.assertTrue(budget["status"]["needs_initial_compaction"])
+        self.assertEqual(budget["counts"]["total_messages"], 13)
 
 
 if __name__ == "__main__":

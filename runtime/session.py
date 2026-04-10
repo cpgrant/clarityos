@@ -9,6 +9,7 @@ import uuid
 
 from runtime.errors import SessionAuthError
 from runtime.assistant_grounding import build_assistant_prompt_context
+from runtime.memory import list_memories, memory_summary
 from runtime.state import load_state_payload, write_state_payload
 from runtime.workflow_runner import start_workflow
 
@@ -30,6 +31,14 @@ SESSION_STATUS_TRANSITIONS = {
 SESSION_MESSAGE_ROLES = {"user", "assistant", "system"}
 SESSION_MESSAGE_STATUSES = {"submitted", "completed", "waiting", "errored"}
 SESSION_SCOPE_KINDS = {"global", "agent", "workflow", "run"}
+CONTINUITY_COMPACTION_STRATEGY = "session_compaction_v1"
+MAX_STORED_COMPACTIONS = 5
+CONTINUITY_KEEP_RECENT_MESSAGES = 6
+CONTINUITY_RECENT_MESSAGE_LIMIT = 4
+CONTINUITY_SOURCE_MEMORY_LIMIT = 4
+CONTINUITY_MAX_SUMMARY_CHARS = 900
+CONTINUITY_MAX_UNCOMPACTED_MESSAGES = 8
+CONTINUITY_MAX_MESSAGES_BEFORE_COMPACTION = 12
 
 
 def utc_now() -> str:
@@ -271,6 +280,390 @@ def unique_strings(values: list[str | None]) -> list[str]:
     return normalized
 
 
+def truncate_text(value: str | None, *, limit: int = 120) -> str | None:
+    if value is None:
+        return None
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
+
+
+def message_preview_for_summary(message, *, limit: int = 96) -> str:
+    content = normalize_optional_message_content(message.content)
+    if content is None:
+        content = f"[{message.status}]"
+    preview = truncate_text(content, limit=limit) or f"[{message.status}]"
+    label = message.role
+    if message.status != "completed":
+        label = f"{label} ({message.status})"
+    return f"- {label}: {preview}"
+
+
+def summarize_message_window(messages: list, *, max_chars: int) -> str:
+    if not messages:
+        return "No messages were selected for continuity compaction."
+
+    role_counts = {
+        "user": 0,
+        "assistant": 0,
+        "system": 0,
+    }
+    for message in messages:
+        role_counts[message.role] = role_counts.get(message.role, 0) + 1
+
+    lines = [
+        (
+            f"Compacted {len(messages)} earlier messages spanning "
+            f"{messages[0].created_at} to {messages[-1].created_at}. "
+            f"Roles: user={role_counts['user']}, assistant={role_counts['assistant']}, system={role_counts['system']}."
+        )
+    ]
+    for message in messages:
+        lines.append(message_preview_for_summary(message))
+
+    summary = []
+    used = 0
+    for line in lines:
+        candidate = line if not summary else f"\n{line}"
+        if used + len(candidate) > max_chars:
+            if not summary:
+                return truncate_text(line, limit=max_chars) or line[:max_chars]
+            summary.append("\n...")
+            break
+        summary.append(candidate)
+        used += len(candidate)
+    return "".join(summary)
+
+
+def continuity_scope_memories(session, *, limit: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    scope = dict(session.memory_scope)
+    scope_kind = scope["kind"]
+    scope_value = scope.get("value")
+
+    if scope_kind == "global":
+        scoped = list_memories(scope_kind="global", limit=limit)
+    elif scope_kind == "agent":
+        scoped = list_memories(scope_kind="agent", agent=scope_value, limit=limit)
+    elif scope_kind == "workflow":
+        scoped = list_memories(scope_kind="workflow", workflow_id=scope_value, limit=limit) if scope_value else []
+    else:
+        scoped = list_memories(scope_kind="run", run_id=scope_value, limit=limit) if scope_value else []
+
+    recent = [memory_summary(memory) for memory in scoped]
+
+    workflow_memories = []
+    seen = set()
+    for workflow_id in session.workflow_ids:
+        for memory in list_memories(scope_kind="workflow", workflow_id=workflow_id, limit=limit):
+            memory_id = memory["memory_id"]
+            if memory_id in seen:
+                continue
+            workflow_memories.append(memory_summary(memory))
+            seen.add(memory_id)
+            if len(workflow_memories) >= limit:
+                break
+        if len(workflow_memories) >= limit:
+            break
+
+    return recent, workflow_memories
+
+
+def continuity_metadata(session) -> dict[str, Any]:
+    metadata = session.metadata if isinstance(session.metadata, dict) else {}
+    continuity = metadata.get("continuity")
+    if not isinstance(continuity, dict):
+        return {
+            "compactions": [],
+            "active_compaction_id": None,
+            "active_compaction": None,
+            "active_summary": None,
+            "updated_at": None,
+        }
+
+    compactions = [dict(entry) for entry in continuity.get("compactions", []) if isinstance(entry, dict)]
+    active_compaction_id = continuity.get("active_compaction_id")
+    active_compaction = None
+    for entry in compactions:
+        if entry.get("compaction_id") == active_compaction_id:
+            active_compaction = dict(entry)
+            break
+    if active_compaction is None and compactions:
+        active_compaction = dict(compactions[0])
+        active_compaction_id = active_compaction.get("compaction_id")
+
+    return {
+        "compactions": compactions,
+        "active_compaction_id": active_compaction_id,
+        "active_compaction": active_compaction,
+        "active_summary": dict(continuity.get("active_summary")) if isinstance(continuity.get("active_summary"), dict) else None,
+        "updated_at": normalize_optional_string(continuity.get("updated_at"), field_name="metadata.continuity.updated_at"),
+    }
+
+
+def session_continuity_snapshot(session) -> dict[str, Any]:
+    continuity = continuity_metadata(session)
+    return {
+        "compaction_count": len(continuity["compactions"]),
+        "active_compaction_id": continuity["active_compaction_id"],
+        "active_compaction": dict(continuity["active_compaction"]) if continuity["active_compaction"] is not None else None,
+        "active_summary": dict(continuity["active_summary"]) if continuity.get("active_summary") is not None else None,
+        "updated_at": continuity["updated_at"],
+    }
+
+
+def continuity_budget_limits() -> dict[str, int]:
+    return {
+        "keep_recent_messages": CONTINUITY_KEEP_RECENT_MESSAGES,
+        "recent_message_limit": CONTINUITY_RECENT_MESSAGE_LIMIT,
+        "source_memory_limit": CONTINUITY_SOURCE_MEMORY_LIMIT,
+        "max_summary_chars": CONTINUITY_MAX_SUMMARY_CHARS,
+        "max_uncompacted_messages": CONTINUITY_MAX_UNCOMPACTED_MESSAGES,
+        "max_messages_before_compaction": CONTINUITY_MAX_MESSAGES_BEFORE_COMPACTION,
+    }
+
+
+def session_continuity_budget(session) -> dict[str, Any]:
+    limits = continuity_budget_limits()
+    continuity = continuity_metadata(session)
+    active_compaction = continuity["active_compaction"]
+    active_summary = continuity["active_summary"]
+
+    if active_compaction is None:
+        uncompacted_messages = list(session.messages)
+        new_messages_since_compaction = list(session.messages)
+    else:
+        compacted_ids = set(active_compaction.get("compacted_message_ids", []))
+        retained_ids = set(active_compaction.get("retained_message_ids", []))
+        uncompacted_messages = [
+            message for message in session.messages if message.message_id not in compacted_ids
+        ]
+        new_messages_since_compaction = [
+            message
+            for message in session.messages
+            if message.message_id not in compacted_ids and message.message_id not in retained_ids
+        ]
+
+    carry_forward = active_summary.get("carry_forward", {}) if isinstance(active_summary, dict) else {}
+    recent_message_count = int(carry_forward.get("recent_message_count", 0) or 0)
+    source_memory_count = int(carry_forward.get("source_memory_count", 0) or 0)
+    source_workflow_count = len(carry_forward.get("source_workflow_ids", []))
+    summary_chars = len(active_summary.get("summary", "")) if isinstance(active_summary, dict) else 0
+
+    recommendation = "within_budget"
+    if active_compaction is None and len(session.messages) > limits["max_messages_before_compaction"]:
+        recommendation = "compact_now"
+    elif active_compaction is not None and len(uncompacted_messages) > limits["max_uncompacted_messages"]:
+        recommendation = "recompact_now"
+    elif active_summary is None and active_compaction is not None:
+        recommendation = "refresh_summary"
+    elif (
+        recent_message_count >= limits["recent_message_limit"]
+        or source_memory_count >= limits["source_memory_limit"]
+        or summary_chars >= limits["max_summary_chars"]
+    ):
+        recommendation = "monitor_budget"
+
+    return {
+        "limits": limits,
+        "counts": {
+            "total_messages": len(session.messages),
+            "uncompacted_messages": len(uncompacted_messages),
+            "new_messages_since_compaction": len(new_messages_since_compaction),
+            "carry_forward_recent_messages": recent_message_count,
+            "carry_forward_source_memories": source_memory_count,
+            "carry_forward_source_workflows": source_workflow_count,
+            "carry_forward_summary_chars": summary_chars,
+        },
+        "active": {
+            "has_compaction": active_compaction is not None,
+            "has_summary": active_summary is not None,
+        },
+        "status": {
+            "needs_initial_compaction": recommendation == "compact_now",
+            "needs_recompaction": recommendation == "recompact_now",
+            "summary_missing": recommendation == "refresh_summary",
+            "at_or_near_budget": recommendation == "monitor_budget",
+        },
+        "recommendation": recommendation,
+    }
+
+
+def bounded_lines_text(lines: list[str], *, max_chars: int) -> str:
+    if not lines:
+        return ""
+
+    blocks = []
+    used = 0
+    for line in lines:
+        candidate = line if not blocks else f"\n{line}"
+        if used + len(candidate) > max_chars:
+            if not blocks:
+                return truncate_text(line, limit=max_chars) or line[:max_chars]
+            blocks.append("\n...")
+            break
+        blocks.append(candidate)
+        used += len(candidate)
+    return "".join(blocks)
+
+
+def format_memory_scope(scope: dict[str, str | None]) -> str:
+    scope_kind = scope.get("kind", "unknown")
+    scope_value = scope.get("value")
+    if scope_value:
+        return f"{scope_kind}:{scope_value}"
+    return scope_kind
+
+
+def select_continuity_memories(session, *, limit: int) -> list[dict[str, Any]]:
+    recent_memories, workflow_memories = continuity_scope_memories(session, limit=limit)
+    selected = []
+    seen = set()
+    for memory in [*recent_memories, *workflow_memories]:
+        memory_id = memory.get("memory_id")
+        if not isinstance(memory_id, str) or not memory_id.strip() or memory_id in seen:
+            continue
+        selected.append(memory)
+        seen.add(memory_id)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def build_session_continuity_summary(
+    session,
+    *,
+    exclude_message_ids: set[str] | None = None,
+    recent_message_limit: int = CONTINUITY_RECENT_MESSAGE_LIMIT,
+    memory_limit: int = CONTINUITY_SOURCE_MEMORY_LIMIT,
+    max_chars: int = CONTINUITY_MAX_SUMMARY_CHARS,
+) -> dict[str, Any] | None:
+    continuity = continuity_metadata(session)
+    active_compaction = continuity["active_compaction"]
+    if active_compaction is None:
+        return None
+
+    exclude_message_ids = exclude_message_ids or set()
+    recent_message_limit = max(recent_message_limit, 1)
+    memory_limit = max(memory_limit, 1)
+    max_chars = max(max_chars, 240)
+
+    recent_messages = [
+        message
+        for message in session.messages
+        if message.message_id not in exclude_message_ids
+    ][-recent_message_limit:]
+    selected_memories = select_continuity_memories(session, limit=memory_limit)
+    source_memory_ids = [memory["memory_id"] for memory in selected_memories]
+    source_workflow_ids = unique_strings(
+        [
+            session.current_workflow_id,
+            *active_compaction.get("source_workflow_ids", []),
+            *[message.workflow_id for message in recent_messages],
+            *[memory.get("workflow_id") for memory in selected_memories],
+        ]
+    )
+    lines = [
+        "Carry-forward summary for this session.",
+        (
+            f"Session status: {session.status}. "
+            f"Current workflow: {session.current_workflow_id or 'none'}. "
+            f"Memory scope: {format_memory_scope(session.memory_scope)}."
+        ),
+    ]
+
+    earlier_summary = truncate_text(active_compaction.get("summary"), limit=min(max_chars // 2, 480))
+    if earlier_summary:
+        lines.append("Earlier compacted context:")
+        lines.append(earlier_summary)
+
+    if recent_messages:
+        lines.append("Recent message tail:")
+        for message in recent_messages:
+            lines.append(message_preview_for_summary(message, limit=84))
+
+    if selected_memories:
+        lines.append("Relevant continuity memories:")
+        for memory in selected_memories:
+            lines.append(
+                f"- [{memory['memory_id']}] "
+                f"{truncate_text(memory.get('payload_summary'), limit=92) or 'memory'}"
+            )
+
+    return {
+        "kind": "session_continuity_summary",
+        "based_on_compaction_id": active_compaction.get("compaction_id"),
+        "updated_at": utc_now(),
+        "summary": bounded_lines_text(lines, max_chars=max_chars),
+        "carry_forward": {
+            "limits": {
+                "recent_message_limit": recent_message_limit,
+                "source_memory_limit": memory_limit,
+                "max_summary_chars": max_chars,
+            },
+            "session_status": session.status,
+            "current_workflow_id": session.current_workflow_id,
+            "memory_scope": dict(session.memory_scope),
+            "recent_message_ids": [message.message_id for message in recent_messages],
+            "source_memory_ids": source_memory_ids,
+            "source_workflow_ids": source_workflow_ids,
+            "recent_message_count": len(recent_messages),
+            "source_memory_count": len(selected_memories),
+        },
+    }
+
+
+def refresh_session_continuity_summary(
+    session,
+    *,
+    recent_message_limit: int = CONTINUITY_RECENT_MESSAGE_LIMIT,
+    memory_limit: int = CONTINUITY_SOURCE_MEMORY_LIMIT,
+    max_chars: int = CONTINUITY_MAX_SUMMARY_CHARS,
+) -> dict[str, Any] | None:
+    continuity = continuity_metadata(session)
+    state = {
+        "compactions": [dict(entry) for entry in continuity["compactions"]],
+        "active_compaction_id": continuity["active_compaction_id"],
+        "updated_at": continuity["updated_at"],
+    }
+    summary = build_session_continuity_summary(
+        session,
+        recent_message_limit=recent_message_limit,
+        memory_limit=memory_limit,
+        max_chars=max_chars,
+    )
+    if summary is not None:
+        state["active_summary"] = summary
+        state["updated_at"] = summary["updated_at"]
+    session.metadata["continuity"] = state
+    return summary
+
+
+def build_session_continuity_prompt_context(
+    session,
+    *,
+    exclude_message_ids: set[str] | None = None,
+    recent_message_limit: int = CONTINUITY_RECENT_MESSAGE_LIMIT,
+    memory_limit: int = CONTINUITY_SOURCE_MEMORY_LIMIT,
+    max_chars: int = CONTINUITY_MAX_SUMMARY_CHARS,
+) -> list[dict[str, str]]:
+    summary = build_session_continuity_summary(
+        session,
+        exclude_message_ids=exclude_message_ids,
+        recent_message_limit=recent_message_limit,
+        memory_limit=memory_limit,
+        max_chars=max_chars,
+    )
+    if summary is None:
+        return []
+    return [
+        {
+            "title": "Session continuity",
+            "source": f"session_continuity:{session.session_id}",
+            "content": summary["summary"],
+        }
+    ]
+
+
 def session_target_status(previous_status: str, workflow_status: str) -> str:
     if workflow_status == "success":
         if previous_status in {"waiting", "errored"}:
@@ -345,6 +738,33 @@ def build_session_transition_history(
                 to_run_id=current.get("last_run_id"),
             )
         )
+
+    previous_continuity = (((previous or {}).get("metadata") or {}).get("continuity") or {}) if previous is not None else {}
+    current_continuity = (((current or {}).get("metadata") or {}).get("continuity") or {})
+    previous_compaction_id = previous_continuity.get("active_compaction_id")
+    current_compaction_id = current_continuity.get("active_compaction_id")
+    if current_compaction_id != previous_compaction_id:
+        current_compactions = current_continuity.get("compactions", [])
+        active_compaction = next(
+            (
+                entry
+                for entry in current_compactions
+                if isinstance(entry, dict) and entry.get("compaction_id") == current_compaction_id
+            ),
+            None,
+        )
+        if isinstance(active_compaction, dict):
+            history.append(
+                transition_entry(
+                    "continuity_compacted",
+                    timestamp,
+                    compaction_id=current_compaction_id,
+                    strategy=active_compaction.get("strategy"),
+                    compacted_message_count=active_compaction.get("message_count"),
+                    retained_message_count=len(active_compaction.get("retained_message_ids", [])),
+                    source_memory_count=len(active_compaction.get("source_memory_ids", [])),
+                )
+            )
 
     previous_ids = {
         message.get("message_id")
@@ -645,6 +1065,107 @@ def prune_sessions(
     }
 
 
+def compact_session_continuity(
+    session_id: str,
+    *,
+    keep_recent_messages: int = 6,
+    memory_limit: int = 10,
+    max_summary_chars: int = 1200,
+) -> dict[str, Any]:
+    keep_recent_messages = normalize_positive_int(keep_recent_messages, field_name="keep_recent_messages")
+    memory_limit = normalize_positive_int(memory_limit, field_name="memory_limit")
+    max_summary_chars = normalize_positive_int(max_summary_chars, field_name="max_summary_chars")
+
+    session = load_session(session_id)
+    continuity = continuity_metadata(session)
+    active_compaction = continuity["active_compaction"]
+
+    if len(session.messages) <= keep_recent_messages:
+        return {
+            "compacted": False,
+            "reason": "not_enough_messages",
+            "session": session_snapshot(session),
+            "continuity": session_continuity_snapshot(session),
+            "compaction": dict(active_compaction) if active_compaction is not None else None,
+        }
+
+    compacted_messages = session.messages[:-keep_recent_messages]
+    retained_messages = session.messages[-keep_recent_messages:]
+    recent_memories, workflow_memories = continuity_scope_memories(session, limit=memory_limit)
+    source_memory_ids = unique_strings(
+        [
+            *[memory.get("memory_id") for memory in recent_memories],
+            *[memory.get("memory_id") for memory in workflow_memories],
+        ]
+    )
+    source_workflow_ids = unique_strings(
+        [
+            *[message.workflow_id for message in compacted_messages],
+            *[memory.get("workflow_id") for memory in recent_memories],
+            *[memory.get("workflow_id") for memory in workflow_memories],
+        ]
+    )
+    compacted_message_ids = [message.message_id for message in compacted_messages]
+    retained_message_ids = [message.message_id for message in retained_messages]
+
+    if active_compaction is not None:
+        if (
+            active_compaction.get("compacted_message_ids", []) == compacted_message_ids
+            and active_compaction.get("retained_message_ids", []) == retained_message_ids
+            and active_compaction.get("source_memory_ids", []) == source_memory_ids
+        ):
+            return {
+                "compacted": False,
+                "reason": "already_compacted",
+                "session": session_snapshot(session),
+                "continuity": session_continuity_snapshot(session),
+                "compaction": dict(active_compaction),
+            }
+
+    timestamp = utc_now()
+    role_counts = {
+        "user": 0,
+        "assistant": 0,
+        "system": 0,
+    }
+    for message in compacted_messages:
+        role_counts[message.role] = role_counts.get(message.role, 0) + 1
+
+    compaction = {
+        "compaction_id": str(uuid.uuid4()),
+        "kind": "session_message_compaction",
+        "strategy": CONTINUITY_COMPACTION_STRATEGY,
+        "created_at": timestamp,
+        "summary": summarize_message_window(compacted_messages, max_chars=max_summary_chars),
+        "message_count": len(compacted_messages),
+        "message_roles": role_counts,
+        "compacted_message_ids": compacted_message_ids,
+        "retained_message_ids": retained_message_ids,
+        "source_memory_ids": source_memory_ids,
+        "source_workflow_ids": source_workflow_ids,
+        "memory_scope": dict(session.memory_scope),
+        "from_timestamp": compacted_messages[0].created_at,
+        "to_timestamp": compacted_messages[-1].created_at,
+    }
+
+    prior_compactions = [entry for entry in continuity["compactions"] if isinstance(entry, dict)]
+    session.metadata["continuity"] = {
+        "compactions": [compaction, *prior_compactions][:MAX_STORED_COMPACTIONS],
+        "active_compaction_id": compaction["compaction_id"],
+        "updated_at": timestamp,
+    }
+    refresh_session_continuity_summary(session)
+    snapshot = write_session(session)
+
+    return {
+        "compacted": True,
+        "reason": "compacted",
+        "session": snapshot,
+        "continuity": session_continuity_snapshot(session),
+        "compaction": compaction,
+    }
+
+
 def append_session_message(
     session_id: str,
     *,
@@ -684,10 +1205,16 @@ def append_session_message(
     if session.title is None:
         session.title = default_title(normalized_content)
 
-    prompt_context = build_assistant_prompt_context(
+    prompt_context = build_session_continuity_prompt_context(
+        session,
+        exclude_message_ids={user_message.message_id},
+    )
+    prompt_context.extend(
+        build_assistant_prompt_context(
         surface=session.ownership.get("surface"),
         user_input=normalized_content,
         agent_name=message_agent,
+        )
     )
     if prompt_context:
         user_message.metadata["grounding"] = {
@@ -771,6 +1298,7 @@ def append_session_message(
         },
     )
     session.messages.append(assistant_message)
+    refresh_session_continuity_summary(session)
 
     return {
         "session": write_session(session),

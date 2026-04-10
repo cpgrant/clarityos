@@ -287,6 +287,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["status"], "archived")
         mock_archive_session.assert_called_once_with("session-123", reason="support cleanup")
 
+    @patch.object(main, "compact_session_continuity", return_value={"compacted": True, "reason": "compacted"})
+    def test_session_continuity_compact_passthrough(self, mock_compact_session_continuity) -> None:
+        response = main.session_continuity_compact(
+            "session-123",
+            {"keep_recent_messages": 4, "memory_limit": 6, "max_summary_chars": 700},
+        )
+
+        self.assertTrue(response["compacted"])
+        mock_compact_session_continuity.assert_called_once_with(
+            "session-123",
+            keep_recent_messages=4,
+            memory_limit=6,
+            max_summary_chars=700,
+        )
+
     @patch.object(main, "prune_sessions", return_value={"pruned_count": 2, "pruned_session_ids": ["a", "b"]})
     def test_session_prune_passthrough(self, mock_prune_sessions) -> None:
         response = main.session_prune({"statuses": ["archived"], "older_than_hours": 24, "limit": 5})

@@ -775,20 +775,76 @@
       sessionContinuityEl.innerHTML = kvMarkup([
         { label: "Recent scoped memories", value: (control.continuity?.recent || []).length },
         { label: "Workflow memories", value: (control.continuity?.workflow_recent || []).length },
+        { label: "Compactions", value: control.continuity?.compaction_count ?? 0 },
+        { label: "Summary", value: control.continuity?.active_summary ? "Ready" : "None" },
+        { label: "Recommendation", value: control.continuity?.budget?.recommendation || "within_budget" },
+        { label: "Uncompacted msgs", value: control.continuity?.budget?.counts?.uncompacted_messages ?? 0 },
+        { label: "New since compact", value: control.continuity?.budget?.counts?.new_messages_since_compaction ?? 0 },
+        { label: "Summary chars", value: control.continuity?.budget?.counts?.carry_forward_summary_chars ?? 0 },
         { label: "Message memory gap", value: control.continuity?.message_memory_gap ? "Yes" : "No" },
         { label: "Waiting messages", value: control.session_rollup?.counts?.waiting ?? 0 },
         { label: "Errored messages", value: control.session_rollup?.counts?.errored ?? 0 },
       ]);
 
+      const continuityEntries = [];
+      if (control.continuity?.budget) {
+        continuityEntries.push({
+          entry_type: "budget",
+          ...control.continuity.budget,
+        });
+      }
+      if (control.continuity?.active_summary) {
+        continuityEntries.push({
+          entry_type: "summary",
+          ...control.continuity.active_summary,
+        });
+      }
+      if (control.continuity?.active_compaction) {
+        continuityEntries.push({
+          entry_type: "compaction",
+          ...control.continuity.active_compaction,
+        });
+      }
+      continuityEntries.push(...(control.continuity?.recent || []), ...(control.continuity?.workflow_recent || []));
+
       continuityMemoriesEl.innerHTML = entryMarkup(
-        [...(control.continuity?.recent || []), ...(control.continuity?.workflow_recent || [])].slice(0, 10),
-        (memory) => `
-          <article class="entry">
-            <strong>${memory.memory_type || "memory"} · ${memory.memory_id || "unknown"}</strong>
-            <div>${memory.scope_kind || "scope"}${memory.agent ? " / " + memory.agent : ""}${memory.workflow_id ? " / " + memory.workflow_id : ""}</div>
-            <small>${memory.updated_at || memory.created_at || "Unknown time"}</small>
-          </article>
-        `,
+        continuityEntries.slice(0, 10),
+        (entry) => {
+          if (entry.entry_type === "budget") {
+            return `
+              <article class="entry">
+                <strong>continuity_budget · ${entry.recommendation || "within_budget"}</strong>
+                <div>${entry.detail || "No budget detail"}</div>
+                <small>Total: ${entry.counts?.total_messages ?? 0} · Uncompacted: ${entry.counts?.uncompacted_messages ?? 0} · Summary chars: ${entry.counts?.carry_forward_summary_chars ?? 0}</small>
+              </article>
+            `;
+          }
+          if (entry.entry_type === "summary") {
+            return `
+              <article class="entry">
+                <strong>session_continuity_summary</strong>
+                <div>${entry.summary || "No summary text"}</div>
+                <small>${entry.updated_at || "Unknown time"}</small>
+              </article>
+            `;
+          }
+          if (entry.entry_type === "compaction") {
+            return `
+              <article class="entry">
+                <strong>continuity_compaction · ${entry.compaction_id || "unknown"}</strong>
+                <div>${entry.summary || "No summary text"}</div>
+                <small>${entry.created_at || "Unknown time"}</small>
+              </article>
+            `;
+          }
+          return `
+            <article class="entry">
+              <strong>${entry.memory_type || "memory"} · ${entry.memory_id || "unknown"}</strong>
+              <div>${entry.scope?.kind || "scope"}${entry.agent ? " / " + entry.agent : ""}${entry.workflow_id ? " / " + entry.workflow_id : ""}</div>
+              <small>${entry.updated_at || entry.created_at || "Unknown time"}</small>
+            </article>
+          `;
+        },
       );
     }
 
