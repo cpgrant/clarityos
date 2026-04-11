@@ -17,6 +17,7 @@ Available playbooks:
 - `widget-deployment.md`
 - `migration.md`
 - `queue-cleanup.md`
+- `operator-runtime.md`
 - `storage-backup.md`
 - `worker-repair.md`
 - `workflow-recovery.md`

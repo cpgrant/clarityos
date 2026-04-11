@@ -168,7 +168,7 @@
 
     .health-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
     }
 
@@ -392,7 +392,7 @@
   <div class="shell">
     <section class="masthead">
       <div>
-        <div class="eyebrow">ClarityOS v1.4</div>
+        <div class="eyebrow">ClarityOS v1.7</div>
         <h1>Operator Console</h1>
         <p class="lede">A thin control-plane UI for sessions, workflows, incidents, queue health, and worker health. The runtime still owns the recovery, maintenance, and execution logic.</p>
       </div>
@@ -438,6 +438,13 @@
             <div id="worker-summary" class="kvs"></div>
             <div id="worker-stats" class="stats"></div>
             <div id="worker-events" class="collection" style="margin-top: 14px;"></div>
+          </article>
+
+          <article class="panel card">
+            <div class="label">Runtime Posture</div>
+            <div id="runtime-summary" class="kvs"></div>
+            <div id="runtime-stats" class="stats"></div>
+            <div id="runtime-events" class="collection" style="margin-top: 14px;"></div>
           </article>
         </section>
 
@@ -487,6 +494,9 @@
     const workerSummaryEl = document.getElementById("worker-summary");
     const workerStatsEl = document.getElementById("worker-stats");
     const workerEventsEl = document.getElementById("worker-events");
+    const runtimeSummaryEl = document.getElementById("runtime-summary");
+    const runtimeStatsEl = document.getElementById("runtime-stats");
+    const runtimeEventsEl = document.getElementById("runtime-events");
     const sessionHeaderEl = document.getElementById("session-header");
     const latestIncidentEl = document.getElementById("latest-incident");
     const relatedWorkflowsEl = document.getElementById("related-workflows");
@@ -524,6 +534,9 @@
       workerSummaryEl.innerHTML = emptyMarkup("Loading worker health...");
       workerStatsEl.innerHTML = "";
       workerEventsEl.innerHTML = emptyMarkup("Waiting for worker events...");
+      runtimeSummaryEl.innerHTML = emptyMarkup("Loading runtime posture...");
+      runtimeStatsEl.innerHTML = "";
+      runtimeEventsEl.innerHTML = emptyMarkup("Waiting for runtime guidance...");
     }
 
     function renderDetailLoading() {
@@ -706,6 +719,50 @@
           </article>
         `,
       );
+    }
+
+    function renderRuntimePosture(posture) {
+      runtimeSummaryEl.innerHTML = kvMarkup([
+        { label: "Status", value: posture.status || "unknown" },
+        { label: "Environment", value: posture.environment?.name || "development" },
+        { label: "State root", value: posture.state?.root || "Unknown" },
+        { label: "Root configured", value: posture.state?.root_configured ? "Yes" : "No" },
+        { label: "Next action", value: posture.recommended_next_action || "within_runtime_bounds" },
+      ]);
+      runtimeStatsEl.innerHTML = statMarkup([
+        { label: "Waiting sessions", value: posture.maintenance?.waiting_session_count || 0 },
+        { label: "Retry backlog", value: posture.maintenance?.retry_backlog_count || 0 },
+        { label: "Orphaned workers", value: posture.maintenance?.orphaned_worker_count || 0 },
+      ]);
+
+      const runtimeEntries = [
+        {
+          entry_type: "guidance",
+          title: posture.recommended_next_action || "within_runtime_bounds",
+          detail: posture.recommended_next_action_detail || "No runtime guidance available.",
+          timestamp: posture.environment?.name || "runtime",
+        },
+        ...((posture.action_paths || []).map((path) => ({
+          entry_type: "path",
+          title: "operator_path",
+          detail: path,
+          timestamp: posture.state?.root_env_var || "CLARITYOS_STATE_ROOT",
+        }))),
+        {
+          entry_type: "storage",
+          title: "storage_priorities",
+          detail: `Critical: ${(posture.storage_priorities?.critical || []).join(", ") || "None"}`,
+          timestamp: posture.state?.packaged_mount_recommendation || "No packaged mount recommendation",
+        },
+      ];
+
+      runtimeEventsEl.innerHTML = entryMarkup(runtimeEntries, (entry) => `
+        <article class="entry">
+          <strong>${entry.title || entry.entry_type || "runtime"}</strong>
+          <div>${entry.detail || "No extra detail"}</div>
+          <small>${entry.timestamp || "runtime"}</small>
+        </article>
+      `);
     }
 
     function renderSessions(sessions) {
@@ -945,6 +1002,7 @@
       renderSessions(dashboard.sessions || []);
       renderQueueHealth(dashboard.queue_health || {});
       renderWorkerHealth(dashboard.worker_health || {});
+      renderRuntimePosture(dashboard.runtime_posture || {});
 
       if (!selectedSessionId && Array.isArray(dashboard.sessions) && dashboard.sessions.length > 0) {
         selectedSessionId = dashboard.sessions[0].session_id;

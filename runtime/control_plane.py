@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+import os
 
 from runtime.approval import approval_summary, list_approvals_for_workflow
 from runtime.artifact import artifact_summary, list_artifacts_for_workflow
 from runtime.memory import list_memories, memory_summary
+from runtime.policy import allow_agent_policy_overrides, production_mode_enabled, runtime_environment
 from runtime.queue import job_lease_expired, list_jobs, queue_health_summary, requeue_job, reschedule_job
 from runtime.session import (
     list_sessions,
@@ -11,6 +13,7 @@ from runtime.session import (
     session_continuity_snapshot,
     session_snapshot,
 )
+from runtime.storage import STATE_ROOT_ENV_VAR, storage_profile
 from runtime.trace import list_traces, trace_timeline
 from runtime.worker import load_worker, update_worker, worker_health_summary
 from runtime.workflow import can_spawn_child_workflow, current_step, load_workflow, workflow_snapshot
@@ -1306,6 +1309,107 @@ def worker_health_view() -> dict:
     return worker_health_summary()
 
 
+def runtime_posture_view(
+    *,
+    session_rollup: dict | None = None,
+    queue_health: dict | None = None,
+    worker_health: dict | None = None,
+) -> dict:
+    session_rollup = session_rollup or {"counts": {}}
+    queue_health = queue_health or {}
+    worker_health = worker_health or {}
+    storage = storage_profile()
+    session_counts = session_rollup.get("counts") or {}
+    queue_counts = queue_health.get("counts") or {}
+    queue_metrics = queue_health.get("health") or {}
+    worker_counts = worker_health.get("counts") or {}
+    worker_trends = worker_health.get("trends") or {}
+
+    waiting_session_count = session_counts.get("waiting", 0)
+    errored_session_count = session_counts.get("errored", 0)
+    retry_backlog_count = queue_metrics.get("retry_backlog_count", 0)
+    failed_job_count = queue_metrics.get("failed_count", 0)
+    dead_letter_count = queue_metrics.get("dead_letter_count", 0)
+    expired_running_count = queue_metrics.get("expired_running_count", 0)
+    orphaned_worker_count = len(worker_health.get("orphaned_worker_ids") or [])
+    expired_worker_count = len(worker_health.get("expired_worker_ids") or [])
+
+    recommendation = "within_runtime_bounds"
+    detail = "Runtime posture is within current packaged-operation bounds."
+    status = "healthy"
+    action_paths = ["/operator/profile", "/operator/dashboard"]
+
+    if expired_running_count > 0 or orphaned_worker_count > 0:
+        recommendation = "repair_worker_state"
+        detail = (
+            "Lease or worker ownership drift is present. Review queue and worker health, "
+            "then reconcile expired running jobs or orphaned workers."
+        )
+        status = "action_needed"
+        action_paths = ["/queue/health", "/workers/health", "/operator/dashboard"]
+    elif dead_letter_count > 0 or errored_session_count > 0 or failed_job_count > 0:
+        recommendation = "review_failures"
+        detail = (
+            "Terminal failures are present in sessions or jobs. Review errored sessions, "
+            "failed jobs, and dead-letter workload before the next maintenance window."
+        )
+        status = "attention"
+        action_paths = ["/operator/dashboard", "/queue/health"]
+    elif waiting_session_count > 0 or retry_backlog_count > 0 or expired_worker_count > 0:
+        recommendation = "monitor_runtime"
+        detail = (
+            "The runtime is still operating, but queued retries, waiting sessions, or expired "
+            "worker leases suggest a maintenance review soon."
+        )
+        status = "attention"
+        action_paths = ["/operator/dashboard", "/workers/health"]
+
+    directories = storage.get("directories") or {}
+    guidance = storage.get("guidance") or {}
+    return {
+        "status": status,
+        "recommended_next_action": recommendation,
+        "recommended_next_action_detail": detail,
+        "action_paths": action_paths,
+        "environment": {
+            "name": runtime_environment(),
+            "production_mode": production_mode_enabled(),
+            "agent_policy_overrides_allowed": allow_agent_policy_overrides(),
+        },
+        "state": {
+            "root": storage.get("root"),
+            "root_env_var": storage.get("root_env_var"),
+            "root_configured": bool(os.getenv(STATE_ROOT_ENV_VAR)),
+            "critical_directory_count": len(guidance.get("must_preserve") or []),
+            "recommended_directory_count": len(guidance.get("should_preserve") or []),
+            "regenerable_directory_count": len(guidance.get("can_regenerate") or []),
+            "packaged_mount_recommendation": guidance.get("packaged_mount_recommendation"),
+        },
+        "maintenance": {
+            "waiting_session_count": waiting_session_count,
+            "errored_session_count": errored_session_count,
+            "queued_job_count": queue_counts.get("queued", 0),
+            "retry_backlog_count": retry_backlog_count,
+            "failed_job_count": failed_job_count,
+            "dead_letter_count": dead_letter_count,
+            "expired_running_count": expired_running_count,
+            "busy_worker_count": worker_counts.get("busy", 0),
+            "expired_worker_count": expired_worker_count,
+            "orphaned_worker_count": orphaned_worker_count,
+            "recently_updated_workers_last_hour": worker_trends.get("recently_updated_workers_last_hour", 0),
+        },
+        "storage_priorities": {
+            "critical": list(guidance.get("must_preserve") or []),
+            "recommended": list(guidance.get("should_preserve") or []),
+            "regenerable": list(guidance.get("can_regenerate") or []),
+            "directory_paths": {
+                name: metadata.get("path")
+                for name, metadata in directories.items()
+            },
+        },
+    }
+
+
 def load_related_workflows_for_session(session) -> tuple[list, list[str]]:
     workflows = []
     missing = []
@@ -1528,18 +1632,26 @@ def operator_dashboard_view(*, session_limit: int = 20) -> dict:
     for session in sessions:
         status = session["status"]
         status_counts[status] = status_counts.get(status, 0) + 1
+    session_rollup = {
+        "total_sessions": len(sessions),
+        "counts": status_counts,
+        "latest_session_id": sessions[0]["session_id"] if sessions else None,
+        "waiting_session_ids": [session["session_id"] for session in sessions if session["status"] == "waiting"],
+        "errored_session_ids": [session["session_id"] for session in sessions if session["status"] == "errored"],
+    }
+    queue_health = queue_health_view()
+    worker_health = worker_health_view()
 
     return {
         "sessions": sessions,
-        "session_rollup": {
-            "total_sessions": len(sessions),
-            "counts": status_counts,
-            "latest_session_id": sessions[0]["session_id"] if sessions else None,
-            "waiting_session_ids": [session["session_id"] for session in sessions if session["status"] == "waiting"],
-            "errored_session_ids": [session["session_id"] for session in sessions if session["status"] == "errored"],
-        },
-        "queue_health": queue_health_view(),
-        "worker_health": worker_health_view(),
+        "session_rollup": session_rollup,
+        "queue_health": queue_health,
+        "worker_health": worker_health,
+        "runtime_posture": runtime_posture_view(
+            session_rollup=session_rollup,
+            queue_health=queue_health,
+            worker_health=worker_health,
+        ),
     }
 
 

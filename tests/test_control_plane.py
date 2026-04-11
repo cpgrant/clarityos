@@ -919,13 +919,28 @@ class ControlPlaneTests(unittest.TestCase):
         session.transition_session(waiting, "waiting")
         session.write_session(waiting)
 
-        dashboard = operator_dashboard_view(session_limit=10)
+        with patch.dict(
+            "os.environ",
+            {
+                "CLARITYOS_ENV": "production",
+                "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+                "CLARITYOS_STATE_ROOT": "/srv/clarityos-state",
+            },
+            clear=True,
+        ):
+            dashboard = operator_dashboard_view(session_limit=10)
 
         self.assertEqual(dashboard["session_rollup"]["total_sessions"], 2)
         self.assertEqual(dashboard["session_rollup"]["counts"]["waiting"], 1)
         self.assertIn(first["session_id"], [item["session_id"] for item in dashboard["sessions"]])
         self.assertIn("queue_health", dashboard)
         self.assertIn("worker_health", dashboard)
+        self.assertIn("runtime_posture", dashboard)
+        self.assertEqual(dashboard["runtime_posture"]["environment"]["name"], "production")
+        self.assertTrue(dashboard["runtime_posture"]["state"]["root_configured"])
+        self.assertEqual(dashboard["runtime_posture"]["state"]["root"], "/srv/clarityos-state")
+        self.assertEqual(dashboard["runtime_posture"]["recommended_next_action"], "monitor_runtime")
+        self.assertIn("/operator/dashboard", dashboard["runtime_posture"]["action_paths"])
 
 
 if __name__ == "__main__":

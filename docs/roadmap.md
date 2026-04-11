@@ -9,7 +9,7 @@ Update this file first when milestone scope changes, then keep the summary in th
 - Latest completed milestone: `v1.6`
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next planned step: `v1.7` Slice 3 operator ergonomics and observability for repeated operation
+- Next planned step: `v1.7` Slice 4 release path for repeatable self-hosted deployment
 - Active execution plan: [`docs/v1.7-checklist.md`](./v1.7-checklist.md)
 - Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
 - Recent release notes: [`docs/v1.6-checklist.md`](./v1.6-checklist.md), [`docs/v1.6-release-path.md`](./v1.6-release-path.md), [`docs/architecture-v1.6.md`](./architecture-v1.6.md), and [`docs/history/v1.6.md`](./history/v1.6.md)
@@ -370,9 +370,9 @@ Current progress note:
 - `v1.7` is now the active milestone with a concrete execution checklist
 - Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker loop, and documented packaged startup posture for API and background execution
 - Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook
-- Slice 3 will improve operator ergonomics and observability for repeated self-hosted operation
+- Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation
 - Slice 4 will define the narrow release path and release gates for the first supportable packaged deployment profile
-- The next planned step is Slice 3 implementation
+- The next planned step is Slice 4 implementation
 
 Planned focus:
 

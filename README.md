@@ -6,7 +6,7 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next target: `v1.7` Slice 3 operator ergonomics and observability for repeated operation
+- Next target: `v1.7` Slice 4 release path for repeatable self-hosted deployment
 
 Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
@@ -16,6 +16,7 @@ The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
 
 `v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
 `v1.7` Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
+`v1.7` Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation.
 
 `v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
 `v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
