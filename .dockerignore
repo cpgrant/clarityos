@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+approvals/
+artifacts/
+jobs/
+logs/
+memories/
+sessions/
+workers/
+workflows/
+docs/diagrams/png/
+clarityos_v*.tar.gz

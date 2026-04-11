@@ -9,7 +9,7 @@ Update this file first when milestone scope changes, then keep the summary in th
 - Latest completed milestone: `v1.6`
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next planned step: `v1.7` Slice 1 packaging and runtime-profile baseline
+- Next planned step: `v1.7` Slice 2 storage layout, backup, and deployment-safe environment rules
 - Active execution plan: [`docs/v1.7-checklist.md`](./v1.7-checklist.md)
 - Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
 - Recent release notes: [`docs/v1.6-checklist.md`](./v1.6-checklist.md), [`docs/v1.6-release-path.md`](./v1.6-release-path.md), [`docs/architecture-v1.6.md`](./architecture-v1.6.md), and [`docs/history/v1.6.md`](./history/v1.6.md)
@@ -368,11 +368,11 @@ Companion notes:
 Current progress note:
 
 - `v1.7` is now the active milestone with a concrete execution checklist
-- Slice 1 will establish a first packaging and runtime-profile baseline for repeatable self-hosted startup
+- Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker loop, and documented packaged startup posture for API and background execution
 - Slice 2 will tighten storage, backup, and environment-layout expectations for persisted runtime state
 - Slice 3 will improve operator ergonomics and observability for repeated self-hosted operation
 - Slice 4 will define the narrow release path and release gates for the first supportable packaged deployment profile
-- The next planned step is Slice 1 implementation
+- The next planned step is Slice 2 implementation
 
 Planned focus:
 

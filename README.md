@@ -6,13 +6,15 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next target: `v1.7` Slice 1 packaging and runtime-profile baseline
+- Next target: `v1.7` Slice 2 storage layout, backup, and deployment-safe environment rules
 
 Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
 The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
 
 `v1.6` is now the current release. It completes the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
+
+`v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
 
 `v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
 `v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
@@ -101,10 +103,13 @@ Released architecture snapshots live in `docs/architecture-v1.6.md` and `docs/ar
 
 ```text
 clarityos/
+├── .dockerignore
+├── Containerfile
 ├── approvals/
 ├── artifacts/
 ├── api/
 │   └── main.py
+├── compose.yaml
 ├── docs/
 │   ├── architecture-v1.4.md
 │   ├── architecture-v1.6.md
@@ -188,6 +193,7 @@ clarityos/
 │   ├── tools_utility.py
 │   ├── tools_web.py
 │   ├── worker.py
+│   ├── worker_loop.py
 │   ├── workflow.py
 │   └── workflow_runner.py
 ├── workflows/
@@ -207,6 +213,7 @@ clarityos/
 │   ├── test_resilience.py
 │   ├── test_session.py
 │   ├── test_worker.py
+│   ├── test_worker_loop.py
 │   ├── test_workflow.py
 │   └── test_workflow_runner.py
 ├── ui/
@@ -333,6 +340,35 @@ Embeddable widget frame:
 ```text
 http://127.0.0.1:8000/widget
 ```
+
+## Packaged Run (`v1.7` Slice 1 Baseline)
+
+The first packaged self-hosted profile now ships with:
+
+- `Containerfile` for the API/runtime image
+- `compose.yaml` for a two-service packaged baseline
+- `python -m runtime.worker_loop` for repeatable background job execution
+
+The packaged profile assumes `.env` contains the environment values you want the services to inherit.
+
+Start the packaged profile with Podman Compose:
+
+```bash
+podman compose up --build
+```
+
+Or with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The packaged baseline runs:
+
+- `api`: `uvicorn api.main:app --host 0.0.0.0 --port 8000`
+- `worker`: `python -m runtime.worker_loop --name packaged-worker --poll-seconds 2`
+
+The compose profile bind-mounts the persisted runtime directories so sessions, workflows, jobs, workers, memories, artifacts, approvals, and logs survive container restarts instead of being baked into the image.
 
 Current `v1.1` assistant surface scope:
 
