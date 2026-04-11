@@ -1,6 +1,6 @@
 # ClarityOS
 
-Minimal, explicit LLM runtime with workflows, queues, and typed memory.
+Minimal, explicit AI runtime for workflows, queues, and typed memory.
 
 ## Status
 
