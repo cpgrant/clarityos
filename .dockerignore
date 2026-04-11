@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 *.pyd
 .env
+state/
 approvals/
 artifacts/
 jobs/

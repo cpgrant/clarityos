@@ -67,6 +67,7 @@ from runtime.session import (
     session_path,
     verify_session_access,
 )
+from runtime.storage import STATE_ROOT_ENV_VAR, storage_profile
 from runtime.state import (
     PERSISTED_STATE_VERSION,
     inspect_state_payload,
@@ -487,6 +488,7 @@ def session_auth_status() -> dict[str, object]:
 
 
 def operator_profile_status() -> dict[str, object]:
+    profile = storage_profile()
     return {
         "environment": {
             "name": runtime_environment(),
@@ -531,15 +533,10 @@ def operator_profile_status() -> dict[str, object]:
         },
         "state": {
             "current_version": PERSISTED_STATE_VERSION,
-            "directories": {
-                "sessions": str(SESSION_DIR),
-                "workflows": str(WORKFLOW_DIR),
-                "jobs": str(JOB_DIR),
-                "workers": str(WORKER_DIR),
-                "memories": str(MEMORY_DIR),
-                "artifacts": str(ARTIFACT_DIR),
-                "approvals": str(APPROVAL_DIR),
-            },
+            "root_env_var": STATE_ROOT_ENV_VAR,
+            "root": profile["root"],
+            "directories": profile["directories"],
+            "guidance": profile["guidance"],
         },
     }
 

@@ -1,6 +1,6 @@
 # Operator Playbooks
 
-These playbooks describe the current `v1.2` runtime and assistant-surface maintenance flows.
+These playbooks describe the current released runtime and operator-facing maintenance flows.
 
 Use them with:
 
@@ -17,6 +17,7 @@ Available playbooks:
 - `widget-deployment.md`
 - `migration.md`
 - `queue-cleanup.md`
+- `storage-backup.md`
 - `worker-repair.md`
 - `workflow-recovery.md`
 - `incident-response.md`

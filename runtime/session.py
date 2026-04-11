@@ -10,12 +10,10 @@ import uuid
 from runtime.errors import SessionAuthError
 from runtime.assistant_grounding import build_assistant_prompt_context
 from runtime.memory import list_memories, memory_summary
+from runtime.storage import SESSION_DIR
 from runtime.state import load_state_payload, write_state_payload
 from runtime.workflow_runner import start_workflow
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-SESSION_DIR = BASE_DIR / "sessions"
 SESSION_STATE_SCHEMA = "session.v1"
 DEFAULT_SESSION_AUTH_HEADER = "X-Session-Token"
 

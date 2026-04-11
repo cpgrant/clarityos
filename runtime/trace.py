@@ -3,9 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-LOG_DIR = BASE_DIR / "logs"
+from runtime.storage import LOG_DIR
 TRACE_VERSION = "v0.8"
 TRACE_SCHEMA = "trace.v2"
 

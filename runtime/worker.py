@@ -14,12 +14,10 @@ from runtime.queue import (
     requeue_job,
     update_job,
 )
+from runtime.storage import WORKER_DIR
 from runtime.state import load_state_payload, write_state_payload
 from runtime.workflow_runner import resume_workflow, start_child_workflow, start_workflow
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-WORKER_DIR = BASE_DIR / "workers"
 DEFAULT_LEASE_SECONDS = 30
 WORKER_STATE_SCHEMA = "worker.v1"
 

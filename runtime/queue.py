@@ -4,11 +4,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from runtime.storage import JOB_DIR
 from runtime.state import load_state_payload, write_state_payload
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-JOB_DIR = BASE_DIR / "jobs"
 JOB_STATE_SCHEMA = "job.v1"
 
 JOB_TYPES = {"workflow_start", "workflow_resume", "workflow_subrun"}

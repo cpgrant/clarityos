@@ -6,7 +6,7 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next target: `v1.7` Slice 2 storage layout, backup, and deployment-safe environment rules
+- Next target: `v1.7` Slice 3 operator ergonomics and observability for repeated operation
 
 Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
@@ -15,6 +15,7 @@ The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
 `v1.6` is now the current release. It completes the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
 
 `v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
+`v1.7` Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
 
 `v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
 `v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
@@ -120,6 +121,7 @@ clarityos/
 │   │   ├── incident-response.md
 │   │   ├── migration.md
 │   │   ├── queue-cleanup.md
+│   │   ├── storage-backup.md
 │   │   ├── worker-repair.md
 │   │   └── workflow-recovery.md
 │   ├── production-profile.md
@@ -185,6 +187,7 @@ clarityos/
 │   ├── state.py
 │   ├── tool_support.py
 │   ├── trace.py
+│   ├── storage.py
 │   ├── tools.py
 │   ├── tools_actions.py
 │   ├── tools_memory.py
@@ -368,7 +371,24 @@ The packaged baseline runs:
 - `api`: `uvicorn api.main:app --host 0.0.0.0 --port 8000`
 - `worker`: `python -m runtime.worker_loop --name packaged-worker --poll-seconds 2`
 
-The compose profile bind-mounts the persisted runtime directories so sessions, workflows, jobs, workers, memories, artifacts, approvals, and logs survive container restarts instead of being baked into the image.
+The packaged baseline also sets:
+
+```bash
+CLARITYOS_STATE_ROOT=/app/state
+```
+
+The compose profile bind-mounts that one state root so the persisted runtime tree survives container restarts:
+
+- `/app/state/sessions`
+- `/app/state/workflows`
+- `/app/state/jobs`
+- `/app/state/workers`
+- `/app/state/memories`
+- `/app/state/artifacts`
+- `/app/state/approvals`
+- `/app/state/logs`
+
+You can inspect the active storage posture through `GET /operator/profile`, which now reports the configured state root, per-directory backup priority, and which directories must be preserved versus can be regenerated.
 
 Current `v1.1` assistant surface scope:
 

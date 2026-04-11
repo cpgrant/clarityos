@@ -3,11 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from runtime.errors import ApprovalStateError
+from runtime.storage import APPROVAL_DIR
 from runtime.state import load_state_payload, write_state_payload
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-APPROVAL_DIR = BASE_DIR / "approvals"
 APPROVAL_STATE_SCHEMA = "approval.v1"
 
 TRANSITIONS = {

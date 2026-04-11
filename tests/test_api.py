@@ -50,6 +50,7 @@ class ApiTests(unittest.TestCase):
             {
                 "CLARITYOS_ENV": "production",
                 "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+                "CLARITYOS_STATE_ROOT": "/srv/clarityos-state",
             },
             clear=True,
         ):
@@ -61,6 +62,15 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["config"]["agents"]["path"], "/tmp/agents.production.yaml")
         self.assertEqual(response["config"]["policies"]["env_var"], "CLARITYOS_POLICIES_CONFIG")
         self.assertEqual(response["state"]["current_version"], "v0.9")
+        self.assertEqual(response["state"]["root_env_var"], "CLARITYOS_STATE_ROOT")
+        self.assertEqual(response["state"]["root"], "/srv/clarityos-state")
+        self.assertEqual(
+            response["state"]["directories"]["sessions"]["path"],
+            "/srv/clarityos-state/sessions",
+        )
+        self.assertEqual(response["state"]["directories"]["sessions"]["backup_priority"], "critical")
+        self.assertIn("sessions", response["state"]["guidance"]["must_preserve"])
+        self.assertIn("logs", response["state"]["guidance"]["can_regenerate"])
 
     @patch.object(main, "operator_dashboard_view", return_value={"session_rollup": {"total_sessions": 2}})
     def test_operator_dashboard_passthrough(self, mock_operator_dashboard_view) -> None:

@@ -4,11 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from runtime.storage import MEMORY_DIR
 from runtime.state import load_state_payload, write_state_payload
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-MEMORY_DIR = BASE_DIR / "memories"
 MEMORY_STATE_SCHEMA = "memory.v1"
 
 MEMORY_TYPES = {"fact", "summary", "observation", "artifact_ref"}

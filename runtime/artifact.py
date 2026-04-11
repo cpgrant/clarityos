@@ -3,11 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from runtime.storage import ARTIFACT_DIR
 from runtime.state import load_state_payload, write_state_payload
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-ARTIFACT_DIR = BASE_DIR / "artifacts"
 ARTIFACT_STATE_SCHEMA = "artifact.v1"
 
 

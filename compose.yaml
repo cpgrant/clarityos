@@ -6,17 +6,12 @@ services:
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
     env_file:
       - .env
+    environment:
+      CLARITYOS_STATE_ROOT: /app/state
     ports:
       - "8000:8000"
     volumes:
-      - ./approvals:/app/approvals
-      - ./artifacts:/app/artifacts
-      - ./jobs:/app/jobs
-      - ./logs:/app/logs
-      - ./memories:/app/memories
-      - ./sessions:/app/sessions
-      - ./workers:/app/workers
-      - ./workflows:/app/workflows
+      - ./state:/app/state
 
   worker:
     build:
@@ -27,12 +22,7 @@ services:
       - api
     env_file:
       - .env
+    environment:
+      CLARITYOS_STATE_ROOT: /app/state
     volumes:
-      - ./approvals:/app/approvals
-      - ./artifacts:/app/artifacts
-      - ./jobs:/app/jobs
-      - ./logs:/app/logs
-      - ./memories:/app/memories
-      - ./sessions:/app/sessions
-      - ./workers:/app/workers
-      - ./workflows:/app/workflows
+      - ./state:/app/state

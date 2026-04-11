@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from runtime.policy import assert_valid_capability
+from runtime.storage import WORKFLOW_DIR
 from runtime.state import load_state_payload, write_state_payload
 
 
@@ -26,8 +27,6 @@ STEP_STATUS_TRANSITIONS = {
     "failed": set(),
 }
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-WORKFLOW_DIR = BASE_DIR / "workflows"
 WORKFLOW_STATE_SCHEMA = "workflow.v1"
 
 
