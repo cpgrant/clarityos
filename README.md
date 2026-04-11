@@ -6,11 +6,11 @@ Minimal, explicit LLM runtime with workflows, queues, and typed memory.
 
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next target: turn `v1.7` into a concrete execution checklist and release path
+- Next target: `v1.7` Slice 1 packaging and runtime-profile baseline
 
 Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
-The completed `v1.6` execution plan lives in `docs/v1.6-checklist.md`.
+The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
 
 `v1.6` is now the current release. It completes the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
 
@@ -33,8 +33,8 @@ The completed `v1.6` execution plan lives in `docs/v1.6-checklist.md`.
 
 Recent release notes live in `docs/v1.6-checklist.md`, `docs/v1.6-release-path.md`, `docs/architecture-v1.6.md`, and `docs/history/v1.6.md`.
 
-`v1.7` is the next milestone to shape. It should focus on deployment repeatability, operator ergonomics, and clearer packaged runtime expectations rather than expanding autonomy.
-Companion planning notes that still frame the current release line live in `docs/differentiators.md`, `docs/v1.5-memory-strategy.md`, and `docs/v1.6-release-path.md`.
+`v1.7` is now the active milestone. It should focus on deployment repeatability, operator ergonomics, and clearer packaged runtime expectations rather than expanding autonomy.
+Companion planning notes for `v1.7` live in `docs/differentiators.md` and `docs/v1.7-release-path.md`.
 
 After `v1.6`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
 
@@ -135,6 +135,8 @@ clarityos/
 │   ├── v1.5-release-path.md
 │   ├── v1.6-checklist.md
 │   ├── v1.6-release-path.md
+│   ├── v1.7-checklist.md
+│   ├── v1.7-release-path.md
 │   └── history/
 │       ├── README.md
 │       ├── v0.1.md

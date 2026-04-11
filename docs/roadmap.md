@@ -9,8 +9,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 - Latest completed milestone: `v1.6`
 - Current release: `v1.6`
 - Current focus: `v1.7` deployment and operator maturity
-- Next planned step: turn `v1.7` into a concrete execution checklist and release path
-- Current planning surface: this roadmap, with `v1.7` still in proposed state
+- Next planned step: `v1.7` Slice 1 packaging and runtime-profile baseline
+- Active execution plan: [`docs/v1.7-checklist.md`](./v1.7-checklist.md)
+- Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
 - Recent release notes: [`docs/v1.6-checklist.md`](./v1.6-checklist.md), [`docs/v1.6-release-path.md`](./v1.6-release-path.md), [`docs/architecture-v1.6.md`](./architecture-v1.6.md), and [`docs/history/v1.6.md`](./history/v1.6.md)
 
 ## Milestones
@@ -353,19 +354,34 @@ Explicitly not the focus:
 - hidden multi-agent orchestration that only exists in prompts
 
 19. `v1.7` - deployment and operator maturity
-Status: proposed
+Status: in progress
 
 Goal:
 Make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
-Likely focus:
+Companion notes:
+
+- [`docs/v1.7-checklist.md`](./v1.7-checklist.md)
+- [`docs/differentiators.md`](./differentiators.md)
+- [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
+
+Current progress note:
+
+- `v1.7` is now the active milestone with a concrete execution checklist
+- Slice 1 will establish a first packaging and runtime-profile baseline for repeatable self-hosted startup
+- Slice 2 will tighten storage, backup, and environment-layout expectations for persisted runtime state
+- Slice 3 will improve operator ergonomics and observability for repeated self-hosted operation
+- Slice 4 will define the narrow release path and release gates for the first supportable packaged deployment profile
+- The next planned step is Slice 1 implementation
+
+Planned focus:
 
 - Podman or container packaging
 - repeatable deployment and runtime profile guidance
 - improved operator ergonomics, monitoring, and maintenance flows
 - cleaner environment and storage layout expectations
 
-Likely use cases:
+Planned use cases:
 
 - repeatable self-hosted assistant deployment
 - cleaner operator onboarding and maintenance
