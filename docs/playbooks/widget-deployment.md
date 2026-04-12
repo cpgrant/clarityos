@@ -20,11 +20,11 @@
 ## Procedure
 
 1. If the widget should be disabled, set:
-   - `CLARITYOS_WIDGET_ENABLED=0`
+   - `CLARITYCLAW_WIDGET_ENABLED=0`
 2. If the widget should be limited to specific hosts, set:
-   - `CLARITYOS_WIDGET_ALLOWED_ORIGINS`
+   - `CLARITYCLAW_WIDGET_ALLOWED_ORIGINS`
 3. If only specific agents should be exposed through the widget, set:
-   - `CLARITYOS_WIDGET_ALLOWED_AGENTS`
+   - `CLARITYCLAW_WIDGET_ALLOWED_AGENTS`
 4. Adjust branding and launcher posture only through env config:
    - brand name
    - tagline

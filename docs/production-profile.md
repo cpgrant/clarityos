@@ -10,8 +10,8 @@ The associated first production use case and release gates live in `docs/v1.0-re
 
 ## Runtime Posture
 
-- Set `CLARITYOS_ENV=production`.
-- Set `CLARITYOS_OPERATOR_TOKEN` and terminate TLS in front of the API.
+- Set `CLARITYCLAW_ENV=production`.
+- Set `CLARITYCLAW_OPERATOR_TOKEN` and terminate TLS in front of the API.
 - Keep agent policy overrides disabled unless there is a reviewed exception.
 - Treat `workflows/`, `jobs/`, `workers/`, `memories/`, `artifacts/`, `approvals/`, and `logs/` as operational state, not source files.
 
@@ -19,17 +19,17 @@ The associated first production use case and release gates live in `docs/v1.0-re
 
 ClarityClaw now supports env-selected config files so production defaults do not have to overwrite local development files.
 
-- `CLARITYOS_AGENTS_CONFIG`
-- `CLARITYOS_POLICIES_CONFIG`
-- `CLARITYOS_MODELS_CONFIG`
+- `CLARITYCLAW_AGENTS_CONFIG`
+- `CLARITYCLAW_POLICIES_CONFIG`
+- `CLARITYCLAW_MODELS_CONFIG`
 
 Recommended production example:
 
 ```bash
-export CLARITYOS_ENV=production
-export CLARITYOS_OPERATOR_TOKEN=replace_me
-export CLARITYOS_AGENTS_CONFIG=config/agents.production.yaml
-export CLARITYOS_POLICIES_CONFIG=config/policies.production.yaml
+export CLARITYCLAW_ENV=production
+export CLARITYCLAW_OPERATOR_TOKEN=replace_me
+export CLARITYCLAW_AGENTS_CONFIG=config/agents.production.yaml
+export CLARITYCLAW_POLICIES_CONFIG=config/policies.production.yaml
 ```
 
 The shipped production examples intentionally:

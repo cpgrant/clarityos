@@ -32,7 +32,7 @@ class ApiTests(unittest.TestCase):
             {
                 "enabled": False,
                 "header": "X-Operator-Token",
-                "env_var": "CLARITYOS_OPERATOR_TOKEN",
+                "env_var": "CLARITYCLAW_OPERATOR_TOKEN",
             },
         )
 
@@ -48,9 +48,9 @@ class ApiTests(unittest.TestCase):
         with patch.dict(
             main.os.environ,
             {
-                "CLARITYOS_ENV": "production",
-                "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
-                "CLARITYOS_STATE_ROOT": "/srv/clarityos-state",
+                "CLARITYCLAW_ENV": "production",
+                "CLARITYCLAW_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+                "CLARITYCLAW_STATE_ROOT": "/srv/clarityclaw-state",
             },
             clear=True,
         ):
@@ -60,13 +60,13 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(response["environment"]["production_mode"])
         self.assertTrue(response["policy"]["allow_agent_overrides"])
         self.assertEqual(response["config"]["agents"]["path"], "/tmp/agents.production.yaml")
-        self.assertEqual(response["config"]["policies"]["env_var"], "CLARITYOS_POLICIES_CONFIG")
+        self.assertEqual(response["config"]["policies"]["env_var"], "CLARITYCLAW_POLICIES_CONFIG")
         self.assertEqual(response["state"]["current_version"], "v0.9")
-        self.assertEqual(response["state"]["root_env_var"], "CLARITYOS_STATE_ROOT")
-        self.assertEqual(response["state"]["root"], "/srv/clarityos-state")
+        self.assertEqual(response["state"]["root_env_var"], "CLARITYCLAW_STATE_ROOT")
+        self.assertEqual(response["state"]["root"], "/srv/clarityclaw-state")
         self.assertEqual(
             response["state"]["directories"]["sessions"]["path"],
-            "/srv/clarityos-state/sessions",
+            "/srv/clarityclaw-state/sessions",
         )
         self.assertEqual(response["state"]["directories"]["sessions"]["backup_priority"], "critical")
         self.assertIn("sessions", response["state"]["guidance"]["must_preserve"])
@@ -81,7 +81,7 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
     def test_operator_endpoint_requires_token_when_configured(self, _mock_queue_health_view) -> None:
-        with patch.dict(main.os.environ, {"CLARITYOS_OPERATOR_TOKEN": "secret-token"}, clear=True):
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=True):
             response = main.queue_health()
 
         self.assertEqual(response.status_code, 401)
@@ -98,7 +98,7 @@ class ApiTests(unittest.TestCase):
 
     @patch.object(main, "queue_health_view", return_value={"health": {"retry_backlog_count": 1}})
     def test_operator_endpoint_accepts_valid_token_when_configured(self, mock_queue_health_view) -> None:
-        with patch.dict(main.os.environ, {"CLARITYOS_OPERATOR_TOKEN": "secret-token"}, clear=True):
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=True):
             response = main.queue_health(x_operator_token="secret-token")
 
         self.assertEqual(response["health"]["retry_backlog_count"], 1)
@@ -161,7 +161,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn(b"Widget Origin Not Allowed", response.body)
 
     def test_widget_surface_reports_disabled_widget_when_turned_off(self) -> None:
-        with patch.dict(main.os.environ, {"CLARITYOS_WIDGET_ENABLED": "0"}, clear=True):
+        with patch.dict(main.os.environ, {"CLARITYCLAW_WIDGET_ENABLED": "0"}, clear=True):
             response = main.widget_surface(request_for("/widget"))
 
         self.assertEqual(response.status_code, 404)
@@ -173,12 +173,12 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"widget-loader", response.body)
-        self.assertIn(b"__CLARITYOS_WIDGET_CONFIG__", response.body)
+        self.assertIn(b"__CLARITYCLAW_WIDGET_CONFIG__", response.body)
         self.assertEqual(response.media_type, "application/javascript")
         mock_widget_script.assert_called_once_with()
 
     def test_widget_loader_returns_disabled_notice_when_widget_is_off(self) -> None:
-        with patch.dict(main.os.environ, {"CLARITYOS_WIDGET_ENABLED": "false"}, clear=True):
+        with patch.dict(main.os.environ, {"CLARITYCLAW_WIDGET_ENABLED": "false"}, clear=True):
             response = main.widget_loader(request_for("/widget.js"))
 
         self.assertEqual(response.status_code, 404)
@@ -188,8 +188,8 @@ class ApiTests(unittest.TestCase):
         with patch.dict(
             main.os.environ,
             {
-                "CLARITYOS_WIDGET_ALLOWED_ORIGINS": "https://app.example.com,https://admin.example.com",
-                "CLARITYOS_WIDGET_BRAND_NAME": "Site Assistant",
+                "CLARITYCLAW_WIDGET_ALLOWED_ORIGINS": "https://app.example.com,https://admin.example.com",
+                "CLARITYCLAW_WIDGET_BRAND_NAME": "Site Assistant",
             },
             clear=True,
         ):
@@ -210,10 +210,10 @@ class ApiTests(unittest.TestCase):
         with patch.dict(
             main.os.environ,
             {
-                "CLARITYOS_WIDGET_ALLOWED_AGENTS": "researcher,default",
-                "CLARITYOS_WIDGET_DEFAULT_AGENT": "default",
-                "CLARITYOS_WIDGET_LAUNCHER_POSITION": "left",
-                "CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN": "1",
+                "CLARITYCLAW_WIDGET_ALLOWED_AGENTS": "researcher,default",
+                "CLARITYCLAW_WIDGET_DEFAULT_AGENT": "default",
+                "CLARITYCLAW_WIDGET_LAUNCHER_POSITION": "left",
+                "CLARITYCLAW_WIDGET_LAUNCHER_DEFAULT_OPEN": "1",
             },
             clear=True,
         ):

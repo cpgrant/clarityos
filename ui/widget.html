@@ -241,7 +241,7 @@
   </div>
 
   <script>
-    const runtimeConfig = window.__CLARITYOS_WIDGET_CONFIG__ || {};
+    const runtimeConfig = window.__CLARITYCLAW_WIDGET_CONFIG__ || window.__CLARITYOS_WIDGET_CONFIG__ || {};
     const branding = runtimeConfig.branding || {};
     const allowedAgents = Array.isArray(runtimeConfig.allowed_agents) ? runtimeConfig.allowed_agents : [];
     const params = new URLSearchParams(window.location.search);
@@ -263,7 +263,8 @@
     const widgetChannel = params.get("channel") || "embed_widget";
     const widgetAccent = params.get("accent") || branding.accent || "#176b52";
     const parentOrigin = params.get("parent_origin");
-    const storageKey = `clarityos-widget-session:${widgetAgent}:${widgetTitle}`;
+    const storageKey = `clarityclaw-widget-session:${widgetAgent}:${widgetTitle}`;
+    const legacyStorageKey = `clarityos-widget-session:${widgetAgent}:${widgetTitle}`;
     const sessionAuthHeader = "X-Session-Token";
     const pollIntervalMs = 2500;
 
@@ -280,7 +281,7 @@
     const widgetNoteEl = document.getElementById("widget-note");
 
     function readStoredSession() {
-      const raw = window.localStorage.getItem(storageKey);
+      const raw = window.localStorage.getItem(storageKey) || window.localStorage.getItem(legacyStorageKey);
       if (!raw) {
         return { sessionId: null, sessionToken: null };
       }
@@ -298,12 +299,14 @@
     function persistSessionCredentials(nextSessionId, nextSessionToken) {
       if (!nextSessionId) {
         window.localStorage.removeItem(storageKey);
+        window.localStorage.removeItem(legacyStorageKey);
         return;
       }
       window.localStorage.setItem(storageKey, JSON.stringify({
         session_id: nextSessionId,
         session_token: nextSessionToken || null,
       }));
+      window.localStorage.removeItem(legacyStorageKey);
     }
 
     let { sessionId, sessionToken } = readStoredSession();

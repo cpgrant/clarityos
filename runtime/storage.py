@@ -4,13 +4,22 @@ from typing import Any
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATE_ROOT_ENV_VAR = "CLARITYOS_STATE_ROOT"
+STATE_ROOT_ENV_VAR = "CLARITYCLAW_STATE_ROOT"
+LEGACY_STATE_ROOT_ENV_VAR = "CLARITYOS_STATE_ROOT"
+
+
+def _first_env_value(*names: str) -> str | None:
+    for name in names:
+        configured = os.getenv(name)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    return None
 
 
 def state_root() -> Path:
-    configured = os.getenv(STATE_ROOT_ENV_VAR)
-    if isinstance(configured, str) and configured.strip():
-        return Path(configured.strip())
+    configured = _first_env_value(STATE_ROOT_ENV_VAR, LEGACY_STATE_ROOT_ENV_VAR)
+    if configured is not None:
+        return Path(configured)
     return BASE_DIR
 
 
@@ -103,6 +112,7 @@ def storage_profile() -> dict[str, Any]:
     return {
         "root": str(state_root()),
         "root_env_var": STATE_ROOT_ENV_VAR,
+        "legacy_root_env_vars": [LEGACY_STATE_ROOT_ENV_VAR],
         "directories": layout,
         "guidance": {
             "must_preserve": [

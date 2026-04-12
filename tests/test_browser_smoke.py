@@ -145,7 +145,7 @@ class BrowserSmokeTests(unittest.TestCase):
             x_operator_token=None,
         )
 
-        with patch.dict(main.os.environ, {"CLARITYOS_OPERATOR_TOKEN": "secret-token"}, clear=False):
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=False):
             html_response = main.operator_surface()
             self.assertEqual(html_response.status_code, 200)
             body = self.response_text(html_response)
@@ -173,10 +173,10 @@ class BrowserSmokeTests(unittest.TestCase):
         with patch.dict(
             main.os.environ,
             {
-                "CLARITYOS_WIDGET_ALLOWED_ORIGINS": "http://testserver",
-                "CLARITYOS_WIDGET_ALLOWED_AGENTS": "default,researcher",
-                "CLARITYOS_WIDGET_BRAND_NAME": "Smoke Widget",
-                "CLARITYOS_WIDGET_LAUNCHER_LABEL": "Ask Smoke",
+                "CLARITYCLAW_WIDGET_ALLOWED_ORIGINS": "http://testserver",
+                "CLARITYCLAW_WIDGET_ALLOWED_AGENTS": "default,researcher",
+                "CLARITYCLAW_WIDGET_BRAND_NAME": "Smoke Widget",
+                "CLARITYCLAW_WIDGET_LAUNCHER_LABEL": "Ask Smoke",
             },
             clear=False,
         ):
@@ -192,7 +192,7 @@ class BrowserSmokeTests(unittest.TestCase):
             loader_response = main.widget_loader(request_for("/widget.js"))
             self.assertEqual(loader_response.status_code, 200)
             loader_body = loader_response.body.decode("utf-8")
-            self.assertIn("__CLARITYOS_WIDGET_CONFIG__", loader_body)
+            self.assertIn("__CLARITYCLAW_WIDGET_CONFIG__", loader_body)
             self.assertIn("Ask Smoke", loader_body)
             self.assertIn("/widget?title=", loader_body)
 

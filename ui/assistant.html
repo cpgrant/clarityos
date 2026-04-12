@@ -386,7 +386,8 @@
   </div>
 
   <script>
-    const SESSION_STORAGE_KEY = "clarityos-assistant-session";
+    const SESSION_STORAGE_KEY = "clarityclaw-assistant-session";
+    const LEGACY_SESSION_STORAGE_KEY = "clarityos-assistant-session";
     const SESSION_AUTH_HEADER = "X-Session-Token";
     const POLL_INTERVAL_MS = 2500;
 
@@ -408,7 +409,7 @@
     const threadStateEl = document.getElementById("thread-state");
 
     function readStoredSession() {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY) || window.localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
       if (!raw) {
         return { sessionId: null, sessionToken: null };
       }
@@ -426,12 +427,14 @@
     function persistSessionCredentials(nextSessionId, nextSessionToken) {
       if (!nextSessionId) {
         window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
         return;
       }
       window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
         session_id: nextSessionId,
         session_token: nextSessionToken || null,
       }));
+      window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
     }
 
     let { sessionId, sessionToken } = readStoredSession();

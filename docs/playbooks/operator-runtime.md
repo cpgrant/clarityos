@@ -55,7 +55,7 @@ The card is meant to answer one question quickly:
 The runtime-posture card also reminds operators of packaged storage posture:
 
 - the configured state root
-- whether `CLARITYOS_STATE_ROOT` is set explicitly
+- whether `CLARITYCLAW_STATE_ROOT` is set explicitly
 - how many directories are critical, recommended, or regenerable
 
 If the runtime is being run in a packaged deployment without an explicit state root, fix that before calling the deployment repeatable.

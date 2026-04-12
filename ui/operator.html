@@ -478,8 +478,10 @@
   </div>
 
   <script>
-    const TOKEN_STORAGE_KEY = "clarityos-operator-token";
-    const SELECTED_SESSION_KEY = "clarityos-operator-selected-session";
+    const TOKEN_STORAGE_KEY = "clarityclaw-operator-token";
+    const LEGACY_TOKEN_STORAGE_KEY = "clarityos-operator-token";
+    const SELECTED_SESSION_KEY = "clarityclaw-operator-selected-session";
+    const LEGACY_SELECTED_SESSION_KEY = "clarityos-operator-selected-session";
 
     const tokenInputEl = document.getElementById("operator-token");
     const connectEl = document.getElementById("connect-operator");
@@ -506,9 +508,9 @@
     const workflowActionsEl = document.getElementById("workflow-actions");
 
     let operatorAuth = null;
-    let selectedSessionId = window.localStorage.getItem(SELECTED_SESSION_KEY);
+    let selectedSessionId = window.localStorage.getItem(SELECTED_SESSION_KEY) || window.localStorage.getItem(LEGACY_SELECTED_SESSION_KEY);
     let currentWorkflowActions = null;
-    tokenInputEl.value = window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+    tokenInputEl.value = window.localStorage.getItem(TOKEN_STORAGE_KEY) || window.localStorage.getItem(LEGACY_TOKEN_STORAGE_KEY) || "";
 
     function setStatus(message, isError = false) {
       statusLineEl.textContent = message;
@@ -746,7 +748,7 @@
           entry_type: "path",
           title: "operator_path",
           detail: path,
-          timestamp: posture.state?.root_env_var || "CLARITYOS_STATE_ROOT",
+          timestamp: posture.state?.root_env_var || "CLARITYCLAW_STATE_ROOT",
         }))),
         {
           entry_type: "storage",
@@ -784,6 +786,7 @@
         item.addEventListener("click", async () => {
           selectedSessionId = item.dataset.sessionId;
           window.localStorage.setItem(SELECTED_SESSION_KEY, selectedSessionId);
+          window.localStorage.removeItem(LEGACY_SELECTED_SESSION_KEY);
           await refreshSelectedSession();
           await refreshDashboard();
         });
@@ -1007,9 +1010,11 @@
       if (!selectedSessionId && Array.isArray(dashboard.sessions) && dashboard.sessions.length > 0) {
         selectedSessionId = dashboard.sessions[0].session_id;
         window.localStorage.setItem(SELECTED_SESSION_KEY, selectedSessionId);
+        window.localStorage.removeItem(LEGACY_SELECTED_SESSION_KEY);
       } else if (!Array.isArray(dashboard.sessions) || dashboard.sessions.length === 0) {
         selectedSessionId = null;
         window.localStorage.removeItem(SELECTED_SESSION_KEY);
+        window.localStorage.removeItem(LEGACY_SELECTED_SESSION_KEY);
       }
       await refreshSelectedSession();
     }
@@ -1021,8 +1026,10 @@
         await loadOperatorAuth();
         if (tokenInputEl.value.trim()) {
           window.localStorage.setItem(TOKEN_STORAGE_KEY, tokenInputEl.value.trim());
+          window.localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
         } else {
           window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+          window.localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
         }
         await refreshDashboard();
         setStatus(selectedSessionId ? "Operator console refreshed." : "Operator console refreshed. No sessions are available yet.");

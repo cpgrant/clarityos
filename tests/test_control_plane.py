@@ -922,9 +922,9 @@ class ControlPlaneTests(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "CLARITYOS_ENV": "production",
-                "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
-                "CLARITYOS_STATE_ROOT": "/srv/clarityos-state",
+                "CLARITYCLAW_ENV": "production",
+                "CLARITYCLAW_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+                "CLARITYCLAW_STATE_ROOT": "/srv/clarityclaw-state",
             },
             clear=True,
         ):
@@ -938,7 +938,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertIn("runtime_posture", dashboard)
         self.assertEqual(dashboard["runtime_posture"]["environment"]["name"], "production")
         self.assertTrue(dashboard["runtime_posture"]["state"]["root_configured"])
-        self.assertEqual(dashboard["runtime_posture"]["state"]["root"], "/srv/clarityos-state")
+        self.assertEqual(dashboard["runtime_posture"]["state"]["root"], "/srv/clarityclaw-state")
         self.assertEqual(dashboard["runtime_posture"]["recommended_next_action"], "monitor_runtime")
         self.assertIn("/operator/dashboard", dashboard["runtime_posture"]["action_paths"])
 

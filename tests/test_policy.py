@@ -41,7 +41,7 @@ policies:
 
         with patch.object(policy, "POLICIES_CONFIG_PATH", self.policies_config), patch.dict(
             policy.os.environ,
-            {"CLARITYOS_ENV": "production"},
+            {"CLARITYCLAW_ENV": "production"},
             clear=True,
         ):
             loaded = policy.load_policy("safe_readonly")
@@ -67,7 +67,7 @@ policies:
 
         with patch.dict(
             policy.os.environ,
-            {"CLARITYOS_POLICIES_CONFIG": str(override_config)},
+            {"CLARITYCLAW_POLICIES_CONFIG": str(override_config)},
             clear=True,
         ):
             loaded = policy.load_policy("override")
@@ -91,7 +91,7 @@ policies:
 
         with patch.object(policy, "POLICIES_CONFIG_PATH", self.policies_config), patch.dict(
             policy.os.environ,
-            {"CLARITYOS_ENV": "production"},
+            {"CLARITYCLAW_ENV": "production"},
             clear=True,
         ):
             with self.assertRaisesRegex(
@@ -114,7 +114,7 @@ policies:
 
         with patch.object(policy, "POLICIES_CONFIG_PATH", self.policies_config), patch.dict(
             policy.os.environ,
-            {"CLARITYOS_ENV": "production"},
+            {"CLARITYCLAW_ENV": "production"},
             clear=True,
         ):
             with self.assertRaisesRegex(
@@ -142,7 +142,7 @@ policies:
 
         with patch.object(policy, "POLICIES_CONFIG_PATH", self.policies_config), patch.dict(
             policy.os.environ,
-            {"CLARITYOS_ENV": "production"},
+            {"CLARITYCLAW_ENV": "production"},
             clear=True,
         ):
             with self.assertRaisesRegex(
@@ -171,8 +171,8 @@ policies:
         with patch.object(policy, "POLICIES_CONFIG_PATH", self.policies_config), patch.dict(
             policy.os.environ,
             {
-                "CLARITYOS_ENV": "production",
-                "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES": "1",
+                "CLARITYCLAW_ENV": "production",
+                "CLARITYCLAW_ALLOW_AGENT_POLICY_OVERRIDES": "1",
             },
             clear=True,
         ):

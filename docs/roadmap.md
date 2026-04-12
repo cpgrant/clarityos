@@ -369,7 +369,7 @@ Current progress note:
 
 - `v1.7` is now the current release
 - Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker loop, and documented packaged startup posture for API and background execution
-- Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook
+- Slice 2 is complete through an explicit `CLARITYCLAW_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook
 - Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation
 - Slice 4 is complete through an explicit release path and release gates for the first supportable packaged self-hosted deployment profile
 - Release validation and release promotion have passed for `v1.7`

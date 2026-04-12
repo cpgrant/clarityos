@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     environment:
-      CLARITYOS_STATE_ROOT: /app/state
+      CLARITYCLAW_STATE_ROOT: /app/state
     ports:
       - "8000:8000"
     volumes:
@@ -23,6 +23,6 @@ services:
     env_file:
       - .env
     environment:
-      CLARITYOS_STATE_ROOT: /app/state
+      CLARITYCLAW_STATE_ROOT: /app/state
     volumes:
       - ./state:/app/state

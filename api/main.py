@@ -67,7 +67,7 @@ from runtime.session import (
     session_path,
     verify_session_access,
 )
-from runtime.storage import STATE_ROOT_ENV_VAR, storage_profile
+from runtime.storage import LEGACY_STATE_ROOT_ENV_VAR, STATE_ROOT_ENV_VAR, storage_profile
 from runtime.state import (
     PERSISTED_STATE_VERSION,
     inspect_state_payload,
@@ -100,19 +100,38 @@ WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
 WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
 
 app = FastAPI(title="ClarityClaw", version="1.7.0")
-OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
+OPERATOR_TOKEN_ENV_VAR = "CLARITYCLAW_OPERATOR_TOKEN"
+LEGACY_OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
 SESSION_AUTH_HEADER = DEFAULT_SESSION_AUTH_HEADER
-WIDGET_ALLOWED_ORIGINS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_ORIGINS"
-WIDGET_ENABLED_ENV_VAR = "CLARITYOS_WIDGET_ENABLED"
-WIDGET_ALLOWED_AGENTS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_AGENTS"
-WIDGET_BRAND_NAME_ENV_VAR = "CLARITYOS_WIDGET_BRAND_NAME"
-WIDGET_BRAND_TAGLINE_ENV_VAR = "CLARITYOS_WIDGET_BRAND_TAGLINE"
-WIDGET_BRAND_ACCENT_ENV_VAR = "CLARITYOS_WIDGET_BRAND_ACCENT"
-WIDGET_BRAND_AGENT_ENV_VAR = "CLARITYOS_WIDGET_DEFAULT_AGENT"
-WIDGET_LAUNCHER_LABEL_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_LABEL"
-WIDGET_LAUNCHER_POSITION_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_POSITION"
-WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN"
+WIDGET_ALLOWED_ORIGINS_ENV_VAR = "CLARITYCLAW_WIDGET_ALLOWED_ORIGINS"
+LEGACY_WIDGET_ALLOWED_ORIGINS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_ORIGINS"
+WIDGET_ENABLED_ENV_VAR = "CLARITYCLAW_WIDGET_ENABLED"
+LEGACY_WIDGET_ENABLED_ENV_VAR = "CLARITYOS_WIDGET_ENABLED"
+WIDGET_ALLOWED_AGENTS_ENV_VAR = "CLARITYCLAW_WIDGET_ALLOWED_AGENTS"
+LEGACY_WIDGET_ALLOWED_AGENTS_ENV_VAR = "CLARITYOS_WIDGET_ALLOWED_AGENTS"
+WIDGET_BRAND_NAME_ENV_VAR = "CLARITYCLAW_WIDGET_BRAND_NAME"
+LEGACY_WIDGET_BRAND_NAME_ENV_VAR = "CLARITYOS_WIDGET_BRAND_NAME"
+WIDGET_BRAND_TAGLINE_ENV_VAR = "CLARITYCLAW_WIDGET_BRAND_TAGLINE"
+LEGACY_WIDGET_BRAND_TAGLINE_ENV_VAR = "CLARITYOS_WIDGET_BRAND_TAGLINE"
+WIDGET_BRAND_ACCENT_ENV_VAR = "CLARITYCLAW_WIDGET_BRAND_ACCENT"
+LEGACY_WIDGET_BRAND_ACCENT_ENV_VAR = "CLARITYOS_WIDGET_BRAND_ACCENT"
+WIDGET_BRAND_AGENT_ENV_VAR = "CLARITYCLAW_WIDGET_DEFAULT_AGENT"
+LEGACY_WIDGET_BRAND_AGENT_ENV_VAR = "CLARITYOS_WIDGET_DEFAULT_AGENT"
+WIDGET_LAUNCHER_LABEL_ENV_VAR = "CLARITYCLAW_WIDGET_LAUNCHER_LABEL"
+LEGACY_WIDGET_LAUNCHER_LABEL_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_LABEL"
+WIDGET_LAUNCHER_POSITION_ENV_VAR = "CLARITYCLAW_WIDGET_LAUNCHER_POSITION"
+LEGACY_WIDGET_LAUNCHER_POSITION_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_POSITION"
+WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR = "CLARITYCLAW_WIDGET_LAUNCHER_DEFAULT_OPEN"
+LEGACY_WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR = "CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN"
+
+
+def env_value(*names: str) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 @app.get("/status")
@@ -219,19 +238,20 @@ def normalize_origin_list(raw_value: str | None) -> list[str]:
 
 def widget_branding_config() -> dict[str, str]:
     return {
-        "name": os.getenv(WIDGET_BRAND_NAME_ENV_VAR, "ClarityClaw Assistant"),
-        "tagline": os.getenv(
+        "name": env_value(WIDGET_BRAND_NAME_ENV_VAR, LEGACY_WIDGET_BRAND_NAME_ENV_VAR) or "ClarityClaw Assistant",
+        "tagline": env_value(
             WIDGET_BRAND_TAGLINE_ENV_VAR,
-            "A thin web gateway over the existing session runtime.",
-        ),
-        "accent": os.getenv(WIDGET_BRAND_ACCENT_ENV_VAR, "#176b52"),
-        "default_agent": os.getenv(WIDGET_BRAND_AGENT_ENV_VAR, "researcher"),
-        "launcher_label": os.getenv(WIDGET_LAUNCHER_LABEL_ENV_VAR, "Ask"),
+            LEGACY_WIDGET_BRAND_TAGLINE_ENV_VAR,
+        )
+        or "A thin web gateway over the existing session runtime.",
+        "accent": env_value(WIDGET_BRAND_ACCENT_ENV_VAR, LEGACY_WIDGET_BRAND_ACCENT_ENV_VAR) or "#176b52",
+        "default_agent": env_value(WIDGET_BRAND_AGENT_ENV_VAR, LEGACY_WIDGET_BRAND_AGENT_ENV_VAR) or "researcher",
+        "launcher_label": env_value(WIDGET_LAUNCHER_LABEL_ENV_VAR, LEGACY_WIDGET_LAUNCHER_LABEL_ENV_VAR) or "Ask",
     }
 
 
-def env_bool(name: str, *, default: bool) -> bool:
-    raw = os.getenv(name)
+def env_bool(*names: str, default: bool) -> bool:
+    raw = env_value(*names)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
@@ -253,7 +273,7 @@ def normalize_csv_values(raw_value: str | None) -> list[str]:
 
 
 def widget_allowed_agents() -> list[str]:
-    configured = normalize_csv_values(os.getenv(WIDGET_ALLOWED_AGENTS_ENV_VAR))
+    configured = normalize_csv_values(env_value(WIDGET_ALLOWED_AGENTS_ENV_VAR, LEGACY_WIDGET_ALLOWED_AGENTS_ENV_VAR))
     default_agent = widget_branding_config()["default_agent"]
     if not configured:
         return [default_agent]
@@ -262,19 +282,25 @@ def widget_allowed_agents() -> list[str]:
 
 
 def widget_launcher_config() -> dict[str, object]:
-    position = os.getenv(WIDGET_LAUNCHER_POSITION_ENV_VAR, "right").strip().lower()
+    position = (
+        env_value(WIDGET_LAUNCHER_POSITION_ENV_VAR, LEGACY_WIDGET_LAUNCHER_POSITION_ENV_VAR) or "right"
+    ).strip().lower()
     if position not in {"left", "right"}:
         raise ValueError(
             f"Widget launcher position must be `left` or `right`, got `{position}`"
         )
     return {
         "position": position,
-        "default_open": env_bool(WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR, default=False),
+        "default_open": env_bool(
+            WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR,
+            LEGACY_WIDGET_LAUNCHER_DEFAULT_OPEN_ENV_VAR,
+            default=False,
+        ),
     }
 
 
 def widget_enabled() -> bool:
-    return env_bool(WIDGET_ENABLED_ENV_VAR, default=True)
+    return env_bool(WIDGET_ENABLED_ENV_VAR, LEGACY_WIDGET_ENABLED_ENV_VAR, default=True)
 
 
 def resolve_widget_agent(requested_agent: str | None, allowed_agents: list[str]) -> str:
@@ -328,7 +354,9 @@ def widget_runtime_config(
     service_origin: str,
     requested_origin: str | None = None,
 ) -> dict[str, object]:
-    allowed_origins = normalize_origin_list(os.getenv(WIDGET_ALLOWED_ORIGINS_ENV_VAR))
+    allowed_origins = normalize_origin_list(
+        env_value(WIDGET_ALLOWED_ORIGINS_ENV_VAR, LEGACY_WIDGET_ALLOWED_ORIGINS_ENV_VAR)
+    )
     allowed_agents = widget_allowed_agents()
     branding = widget_branding_config()
     return {
@@ -367,6 +395,7 @@ def render_widget_html(config: dict[str, object]) -> str:
     html = widget_html()
     injected = (
         "<script>"
+        f"window.__CLARITYCLAW_WIDGET_CONFIG__ = {json.dumps(config)};"
         f"window.__CLARITYOS_WIDGET_CONFIG__ = {json.dumps(config)};"
         "</script>"
     )
@@ -469,7 +498,7 @@ def widget_disabled_html(config: dict[str, object]) -> str:
 
 
 def operator_auth_enabled() -> bool:
-    token = os.getenv(OPERATOR_TOKEN_ENV_VAR)
+    token = env_value(OPERATOR_TOKEN_ENV_VAR, LEGACY_OPERATOR_TOKEN_ENV_VAR)
     return isinstance(token, str) and bool(token.strip())
 
 
@@ -526,7 +555,9 @@ def operator_profile_status() -> dict[str, object]:
                     "launcher_label": WIDGET_LAUNCHER_LABEL_ENV_VAR,
                 },
                 "defaults": {
-                    "allowed_origins": normalize_origin_list(os.getenv(WIDGET_ALLOWED_ORIGINS_ENV_VAR)),
+                    "allowed_origins": normalize_origin_list(
+                        env_value(WIDGET_ALLOWED_ORIGINS_ENV_VAR, LEGACY_WIDGET_ALLOWED_ORIGINS_ENV_VAR)
+                    ),
                     "branding": widget_branding_config(),
                 },
             },
@@ -534,6 +565,7 @@ def operator_profile_status() -> dict[str, object]:
         "state": {
             "current_version": PERSISTED_STATE_VERSION,
             "root_env_var": STATE_ROOT_ENV_VAR,
+            "legacy_root_env_vars": [LEGACY_STATE_ROOT_ENV_VAR],
             "root": profile["root"],
             "directories": profile["directories"],
             "guidance": profile["guidance"],
@@ -542,7 +574,7 @@ def operator_profile_status() -> dict[str, object]:
 
 
 def require_operator_auth(operator_token: str | None) -> None:
-    configured = os.getenv(OPERATOR_TOKEN_ENV_VAR)
+    configured = env_value(OPERATOR_TOKEN_ENV_VAR, LEGACY_OPERATOR_TOKEN_ENV_VAR)
     if not isinstance(configured, str) or not configured.strip():
         return
     if not operator_token_matches(operator_token):
@@ -553,7 +585,7 @@ def require_operator_auth(operator_token: str | None) -> None:
 
 
 def operator_token_matches(operator_token: str | None) -> bool:
-    configured = os.getenv(OPERATOR_TOKEN_ENV_VAR)
+    configured = env_value(OPERATOR_TOKEN_ENV_VAR, LEGACY_OPERATOR_TOKEN_ENV_VAR)
     if not isinstance(configured, str) or not configured.strip():
         return False
     candidate = operator_token.strip() if isinstance(operator_token, str) else ""
@@ -627,6 +659,7 @@ def widget_loader(request: Request):
                 headers={"Cache-Control": "no-store"},
             )
         payload = (
+            f"window.__CLARITYCLAW_WIDGET_CONFIG__ = {json.dumps(config)};\n"
             f"window.__CLARITYOS_WIDGET_CONFIG__ = {json.dumps(config)};\n"
             f"{widget_script()}"
         )

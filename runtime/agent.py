@@ -50,7 +50,8 @@ from runtime.workflow import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 AGENTS_CONFIG_PATH = BASE_DIR / "config" / "agents.yaml"
-AGENTS_CONFIG_ENV_VAR = "CLARITYOS_AGENTS_CONFIG"
+AGENTS_CONFIG_ENV_VAR = "CLARITYCLAW_AGENTS_CONFIG"
+LEGACY_AGENTS_CONFIG_ENV_VAR = "CLARITYOS_AGENTS_CONFIG"
 
 
 @dataclass
@@ -100,9 +101,10 @@ class RunState:
 
 
 def agents_config_path() -> Path:
-    configured = os.getenv(AGENTS_CONFIG_ENV_VAR)
-    if isinstance(configured, str) and configured.strip():
-        return Path(configured.strip())
+    for name in (AGENTS_CONFIG_ENV_VAR, LEGACY_AGENTS_CONFIG_ENV_VAR):
+        configured = os.getenv(name)
+        if isinstance(configured, str) and configured.strip():
+            return Path(configured.strip())
     return AGENTS_CONFIG_PATH
 
 

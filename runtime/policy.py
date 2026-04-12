@@ -10,9 +10,12 @@ from runtime.errors import PolicyDeniedError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 POLICIES_CONFIG_PATH = BASE_DIR / "config" / "policies.yaml"
-POLICIES_CONFIG_ENV_VAR = "CLARITYOS_POLICIES_CONFIG"
-PRODUCTION_ENV_VAR = "CLARITYOS_ENV"
-ALLOW_POLICY_OVERRIDES_ENV_VAR = "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES"
+POLICIES_CONFIG_ENV_VAR = "CLARITYCLAW_POLICIES_CONFIG"
+LEGACY_POLICIES_CONFIG_ENV_VAR = "CLARITYOS_POLICIES_CONFIG"
+PRODUCTION_ENV_VAR = "CLARITYCLAW_ENV"
+LEGACY_PRODUCTION_ENV_VAR = "CLARITYOS_ENV"
+ALLOW_POLICY_OVERRIDES_ENV_VAR = "CLARITYCLAW_ALLOW_AGENT_POLICY_OVERRIDES"
+LEGACY_ALLOW_POLICY_OVERRIDES_ENV_VAR = "CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES"
 CAPABILITY_CLASSES = {
     "model_call",
     "file_read",
@@ -48,7 +51,9 @@ class PolicyDecision:
 
 
 def runtime_environment() -> str:
-    value = os.getenv(PRODUCTION_ENV_VAR, "development")
+    value = os.getenv(PRODUCTION_ENV_VAR)
+    if value is None:
+        value = os.getenv(LEGACY_PRODUCTION_ENV_VAR, "development")
     if not isinstance(value, str) or not value.strip():
         return "development"
     return value.strip().lower()
@@ -58,21 +63,24 @@ def production_mode_enabled() -> bool:
     return runtime_environment() in PRODUCTION_ENV_NAMES
 
 
-def env_flag_enabled(name: str) -> bool:
-    value = os.getenv(name)
-    if not isinstance(value, str):
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+def env_flag_enabled(*names: str) -> bool:
+    for name in names:
+        value = os.getenv(name)
+        if not isinstance(value, str):
+            continue
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def allow_agent_policy_overrides() -> bool:
-    return env_flag_enabled(ALLOW_POLICY_OVERRIDES_ENV_VAR)
+    return env_flag_enabled(ALLOW_POLICY_OVERRIDES_ENV_VAR, LEGACY_ALLOW_POLICY_OVERRIDES_ENV_VAR)
 
 
 def policies_config_path() -> Path:
-    configured = os.getenv(POLICIES_CONFIG_ENV_VAR)
-    if isinstance(configured, str) and configured.strip():
-        return Path(configured.strip())
+    for name in (POLICIES_CONFIG_ENV_VAR, LEGACY_POLICIES_CONFIG_ENV_VAR):
+        configured = os.getenv(name)
+        if isinstance(configured, str) and configured.strip():
+            return Path(configured.strip())
     return POLICIES_CONFIG_PATH
 
 

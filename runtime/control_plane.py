@@ -13,7 +13,7 @@ from runtime.session import (
     session_continuity_snapshot,
     session_snapshot,
 )
-from runtime.storage import STATE_ROOT_ENV_VAR, storage_profile
+from runtime.storage import LEGACY_STATE_ROOT_ENV_VAR, STATE_ROOT_ENV_VAR, storage_profile
 from runtime.trace import list_traces, trace_timeline
 from runtime.worker import load_worker, update_worker, worker_health_summary
 from runtime.workflow import can_spawn_child_workflow, current_step, load_workflow, workflow_snapshot
@@ -1379,7 +1379,7 @@ def runtime_posture_view(
         "state": {
             "root": storage.get("root"),
             "root_env_var": storage.get("root_env_var"),
-            "root_configured": bool(os.getenv(STATE_ROOT_ENV_VAR)),
+            "root_configured": bool(os.getenv(STATE_ROOT_ENV_VAR) or os.getenv(LEGACY_STATE_ROOT_ENV_VAR)),
             "critical_directory_count": len(guidance.get("must_preserve") or []),
             "recommended_directory_count": len(guidance.get("should_preserve") or []),
             "regenerable_directory_count": len(guidance.get("can_regenerate") or []),

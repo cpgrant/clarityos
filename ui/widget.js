@@ -2,7 +2,7 @@
   const script = document.currentScript;
   const scriptUrl = new URL(script.src, window.location.href);
   const origin = (script.dataset.origin || scriptUrl.origin).replace(/\/$/, "");
-  const config = window.__CLARITYOS_WIDGET_CONFIG__ || {};
+  const config = window.__CLARITYCLAW_WIDGET_CONFIG__ || window.__CLARITYOS_WIDGET_CONFIG__ || {};
   const branding = config.branding || {};
   const launcher = config.launcher || {};
   const allowedAgents = Array.isArray(config.allowed_agents) ? config.allowed_agents : [];

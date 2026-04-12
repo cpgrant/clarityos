@@ -13,7 +13,7 @@ Direction after `v1.7`: `v1.8` should add one careful external integration witho
 `v1.7` is now the current release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
 
 `v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
-`v1.7` Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
+`v1.7` Slice 2 is complete through an explicit `CLARITYCLAW_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
 `v1.7` Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation.
 `v1.7` Slice 4 is complete through an explicit release path for the first supportable packaged self-hosted deployment profile, including release gates and narrow support boundaries.
 
@@ -265,52 +265,52 @@ The default Ollama base URL is `http://127.0.0.1:11434`. Set `OLLAMA_BASE_URL` o
 For operator auth on control-plane endpoints:
 
 ```bash
-export CLARITYOS_OPERATOR_TOKEN=replace_me_with_a_long_random_token
+export CLARITYCLAW_OPERATOR_TOKEN=replace_me_with_a_long_random_token
 ```
 
-When `CLARITYOS_OPERATOR_TOKEN` is set, operator and control-plane endpoints require the `X-Operator-Token` header. If the variable is unset, operator auth stays disabled for local development.
+When `CLARITYCLAW_OPERATOR_TOKEN` is set, operator and control-plane endpoints require the `X-Operator-Token` header. If the variable is unset, operator auth stays disabled for local development.
 
 For production policy hardening:
 
 ```bash
-export CLARITYOS_ENV=production
+export CLARITYCLAW_ENV=production
 ```
 
 In production mode, policies must explicitly deny `file_write` and `http`, and dangerous capability rules such as `exec`, `http`, and `file_write` must stay narrowly scoped. Agent-level policy overrides are disabled by default in production; opt in only if you mean it:
 
 ```bash
-export CLARITYOS_ALLOW_AGENT_POLICY_OVERRIDES=1
+export CLARITYCLAW_ALLOW_AGENT_POLICY_OVERRIDES=1
 ```
 
 To use the shipped production-oriented config examples without overwriting local development files:
 
 ```bash
-export CLARITYOS_AGENTS_CONFIG=config/agents.production.yaml
-export CLARITYOS_POLICIES_CONFIG=config/policies.production.yaml
+export CLARITYCLAW_AGENTS_CONFIG=config/agents.production.yaml
+export CLARITYCLAW_POLICIES_CONFIG=config/policies.production.yaml
 ```
 
 If you want a separate model catalog for production, you can also point the runtime at a different models file:
 
 ```bash
-export CLARITYOS_MODELS_CONFIG=config/models.yaml
+export CLARITYCLAW_MODELS_CONFIG=config/models.yaml
 ```
 
 For the embeddable widget, you can narrow which sites are allowed to host it and set branding defaults without editing code:
 
 ```bash
-export CLARITYOS_WIDGET_ENABLED=1
-export CLARITYOS_WIDGET_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
-export CLARITYOS_WIDGET_ALLOWED_AGENTS=researcher,default
-export CLARITYOS_WIDGET_BRAND_NAME="Site Assistant"
-export CLARITYOS_WIDGET_BRAND_TAGLINE="Ask the session-backed assistant"
-export CLARITYOS_WIDGET_BRAND_ACCENT="#176b52"
-export CLARITYOS_WIDGET_DEFAULT_AGENT=researcher
-export CLARITYOS_WIDGET_LAUNCHER_LABEL=Ask
-export CLARITYOS_WIDGET_LAUNCHER_POSITION=right
-export CLARITYOS_WIDGET_LAUNCHER_DEFAULT_OPEN=0
+export CLARITYCLAW_WIDGET_ENABLED=1
+export CLARITYCLAW_WIDGET_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+export CLARITYCLAW_WIDGET_ALLOWED_AGENTS=researcher,default
+export CLARITYCLAW_WIDGET_BRAND_NAME="Site Assistant"
+export CLARITYCLAW_WIDGET_BRAND_TAGLINE="Ask the session-backed assistant"
+export CLARITYCLAW_WIDGET_BRAND_ACCENT="#176b52"
+export CLARITYCLAW_WIDGET_DEFAULT_AGENT=researcher
+export CLARITYCLAW_WIDGET_LAUNCHER_LABEL=Ask
+export CLARITYCLAW_WIDGET_LAUNCHER_POSITION=right
+export CLARITYCLAW_WIDGET_LAUNCHER_DEFAULT_OPEN=0
 ```
 
-If `CLARITYOS_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-origin embedding only. The widget now also publishes deployment-oriented iframe headers, limits embed agents through `CLARITYOS_WIDGET_ALLOWED_AGENTS`, and can be disabled entirely with `CLARITYOS_WIDGET_ENABLED=0`.
+If `CLARITYCLAW_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-origin embedding only. The widget now also publishes deployment-oriented iframe headers, limits embed agents through `CLARITYCLAW_WIDGET_ALLOWED_AGENTS`, and can be disabled entirely with `CLARITYCLAW_WIDGET_ENABLED=0`.
 
 Assistant-facing sessions now use an explicit per-session token for browser and embed access. New sessions created through `/sessions` return a `session_token`; assistant surfaces send it back through `X-Session-Token` on `/assistant/sessions/{session_id}` and `/sessions/{session_id}/messages`. Operator routes remain separately protected by `X-Operator-Token`.
 
@@ -380,7 +380,7 @@ The packaged baseline runs:
 The packaged baseline also sets:
 
 ```bash
-CLARITYOS_STATE_ROOT=/app/state
+CLARITYCLAW_STATE_ROOT=/app/state
 ```
 
 The compose profile bind-mounts that one state root so the persisted runtime tree survives container restarts:
@@ -408,7 +408,7 @@ Current `v1.1` assistant surface scope:
 Current operator console scope:
 
 - reads sessions, queue health, worker health, and selected session control data from the existing operator endpoints
-- prompts for the operator token only when `CLARITYOS_OPERATOR_TOKEN` is configured
+- prompts for the operator token only when `CLARITYCLAW_OPERATOR_TOKEN` is configured
 - surfaces current workflow recovery actions through the browser for safe resume, replay, and recover flows
 - remains a thin control-plane client rather than a second execution or policy layer
 
@@ -514,7 +514,7 @@ Read back a session for the assistant browser flow:
 
 ```bash
 curl http://127.0.0.1:8000/assistant/sessions/session-123 \
-  -H "X-Session-Token: $CLARITYOS_SESSION_TOKEN"
+  -H "X-Session-Token: $CLARITYCLAW_SESSION_TOKEN"
 ```
 
 Create a session and capture the returned token:
@@ -531,30 +531,30 @@ Open the operator console in the browser:
 http://127.0.0.1:8000/operator
 ```
 
-The console uses the existing protected endpoints underneath. If operator auth is enabled, paste the same `CLARITYOS_OPERATOR_TOKEN` value into the browser console prompt field.
+The console uses the existing protected endpoints underneath. If operator auth is enabled, paste the same `CLARITYCLAW_OPERATOR_TOKEN` value into the browser console prompt field.
 
 Load the compact operator dashboard payload directly:
 
 ```bash
 curl http://127.0.0.1:8000/operator/dashboard \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Behind the UI, the operator console reads and acts through:
 
 ```bash
 curl http://127.0.0.1:8000/sessions \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 ```bash
 curl http://127.0.0.1:8000/queue/health \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 ```bash
 curl http://127.0.0.1:8000/workers/health \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Embed the widget on another page:
@@ -590,14 +590,14 @@ Operator runtime profile:
 
 ```bash
 curl http://127.0.0.1:8000/operator/profile \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Inspect a session and its related workflow rollups:
 
 ```bash
 curl http://127.0.0.1:8000/sessions/session-123/control \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Archive an assistant-facing session:
@@ -605,7 +605,7 @@ Archive an assistant-facing session:
 ```bash
 curl -X POST http://127.0.0.1:8000/sessions/session-123/archive \
   -H "Content-Type: application/json" \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN" \
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN" \
   -d '{"reason":"support cleanup"}'
 ```
 
@@ -614,7 +614,7 @@ Prune old archived sessions:
 ```bash
 curl -X POST http://127.0.0.1:8000/sessions/prune \
   -H "Content-Type: application/json" \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN" \
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN" \
   -d '{"statuses":["archived"],"older_than_hours":168,"limit":25}'
 ```
 
@@ -766,21 +766,21 @@ Inspect a workflow from the control plane when operator auth is enabled:
 
 ```bash
 curl http://127.0.0.1:8000/workflows/wf-123 \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Inspect workflow incident rollups and causality chain:
 
 ```bash
 curl "http://127.0.0.1:8000/incidents/workflows/wf-123?trace_limit=20" \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Inspect the compact incident summary:
 
 ```bash
 curl "http://127.0.0.1:8000/incidents/workflows/wf-123/summary?trace_limit=20" \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 Common retrieval output shapes:
@@ -820,14 +820,14 @@ Queue health with operator auth:
 
 ```bash
 curl http://127.0.0.1:8000/queue/health \
-  -H "X-Operator-Token: $CLARITYOS_OPERATOR_TOKEN"
+  -H "X-Operator-Token: $CLARITYCLAW_OPERATOR_TOKEN"
 ```
 
 ## Deployment Notes
 
 - Persisted runtime state lives under `workflows/`, `jobs/`, `workers/`, `memories/`, `artifacts/`, `approvals/`, and `logs/`; treat those directories as operational data.
-- In production, set `CLARITYOS_OPERATOR_TOKEN` and terminate TLS in front of the API so operator headers are not exposed in plaintext.
-- Set `CLARITYOS_ENV=production` in deployed environments so policy validation rejects broad unsafe capability rules and surprise agent-level overrides.
+- In production, set `CLARITYCLAW_OPERATOR_TOKEN` and terminate TLS in front of the API so operator headers are not exposed in plaintext.
+- Set `CLARITYCLAW_ENV=production` in deployed environments so policy validation rejects broad unsafe capability rules and surprise agent-level overrides.
 - Retention is still operator-managed in `v1.0`: use queue prune and state migration endpoints deliberately, and back up persisted state before destructive maintenance.
 - Restart and partial-failure validation now covers persisted incident summaries, workflow recovery, and safe retry resume paths; deeper soak/load testing is still future work.
 - The current trusted-runtime profile is documented in `docs/production-profile.md`.

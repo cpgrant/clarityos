@@ -14,7 +14,7 @@
 
 ## Expected State Layout
 
-When `CLARITYOS_STATE_ROOT` is set, the supported packaged layout is:
+When `CLARITYCLAW_STATE_ROOT` is set, the supported packaged layout is:
 
 - `sessions/`
 - `workflows/`

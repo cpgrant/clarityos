@@ -419,7 +419,7 @@ agents:
             encoding="utf-8",
         )
 
-        with patch.dict(agent.os.environ, {"CLARITYOS_AGENTS_CONFIG": str(override_config)}, clear=True):
+        with patch.dict(agent.os.environ, {"CLARITYCLAW_AGENTS_CONFIG": str(override_config)}, clear=True):
             loaded = agent.load_agent("override")
 
         self.assertEqual(loaded["system"], "Override agent")

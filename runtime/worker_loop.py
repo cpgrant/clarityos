@@ -13,11 +13,23 @@ from runtime.worker import (
     run_next_job,
 )
 
-WORKER_NAME_ENV_VAR = "CLARITYOS_WORKER_NAME"
-WORKER_LEASE_SECONDS_ENV_VAR = "CLARITYOS_WORKER_LEASE_SECONDS"
-WORKER_POLL_SECONDS_ENV_VAR = "CLARITYOS_WORKER_POLL_SECONDS"
-WORKER_REPAIR_ORPHANS_ENV_VAR = "CLARITYOS_WORKER_REPAIR_ORPHANS_ON_START"
+WORKER_NAME_ENV_VAR = "CLARITYCLAW_WORKER_NAME"
+LEGACY_WORKER_NAME_ENV_VAR = "CLARITYOS_WORKER_NAME"
+WORKER_LEASE_SECONDS_ENV_VAR = "CLARITYCLAW_WORKER_LEASE_SECONDS"
+LEGACY_WORKER_LEASE_SECONDS_ENV_VAR = "CLARITYOS_WORKER_LEASE_SECONDS"
+WORKER_POLL_SECONDS_ENV_VAR = "CLARITYCLAW_WORKER_POLL_SECONDS"
+LEGACY_WORKER_POLL_SECONDS_ENV_VAR = "CLARITYOS_WORKER_POLL_SECONDS"
+WORKER_REPAIR_ORPHANS_ENV_VAR = "CLARITYCLAW_WORKER_REPAIR_ORPHANS_ON_START"
+LEGACY_WORKER_REPAIR_ORPHANS_ENV_VAR = "CLARITYOS_WORKER_REPAIR_ORPHANS_ON_START"
 DEFAULT_POLL_SECONDS = 2
+
+
+def _first_env_value(*names: str) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _parse_positive_int(value: int | str | None, *, field_name: str, allow_zero: bool = False) -> int | None:
@@ -121,12 +133,16 @@ def run_worker_loop(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a repeatable ClarityClaw worker loop")
-    parser.add_argument("--name", default=os.environ.get(WORKER_NAME_ENV_VAR) or "packaged-worker")
+    parser.add_argument(
+        "--name",
+        default=_first_env_value(WORKER_NAME_ENV_VAR, LEGACY_WORKER_NAME_ENV_VAR) or "packaged-worker",
+    )
     parser.add_argument(
         "--lease-seconds",
         type=int,
         default=_parse_positive_int(
-            os.environ.get(WORKER_LEASE_SECONDS_ENV_VAR, str(DEFAULT_LEASE_SECONDS)),
+            _first_env_value(WORKER_LEASE_SECONDS_ENV_VAR, LEGACY_WORKER_LEASE_SECONDS_ENV_VAR)
+            or str(DEFAULT_LEASE_SECONDS),
             field_name=WORKER_LEASE_SECONDS_ENV_VAR,
         ),
     )
@@ -134,7 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--poll-seconds",
         type=int,
         default=_parse_positive_int(
-            os.environ.get(WORKER_POLL_SECONDS_ENV_VAR, str(DEFAULT_POLL_SECONDS)),
+            _first_env_value(WORKER_POLL_SECONDS_ENV_VAR, LEGACY_WORKER_POLL_SECONDS_ENV_VAR)
+            or str(DEFAULT_POLL_SECONDS),
             field_name=WORKER_POLL_SECONDS_ENV_VAR,
             allow_zero=True,
         ),
@@ -153,7 +170,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     repair_orphans_on_start = _parse_bool_env(
-        os.environ.get(WORKER_REPAIR_ORPHANS_ENV_VAR),
+        _first_env_value(WORKER_REPAIR_ORPHANS_ENV_VAR, LEGACY_WORKER_REPAIR_ORPHANS_ENV_VAR),
         default=not args.no_repair_orphans_on_start,
     )
     summary = run_worker_loop(

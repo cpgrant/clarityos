@@ -23,7 +23,7 @@ Compared with the released `v1.6` snapshot, the `v1.7` shape adds a clearer pack
 
 - `Containerfile` and `compose.yaml` for the first supported self-hosted startup path
 - `runtime.worker_loop` as the first repeatable packaged background runner
-- `runtime.storage` and `CLARITYOS_STATE_ROOT` for an explicit persisted-state root contract
+- `runtime.storage` and `CLARITYCLAW_STATE_ROOT` for an explicit persisted-state root contract
 - stronger operator runtime posture in `runtime.control_plane`
 
 The runtime centers on:
@@ -96,7 +96,7 @@ Source:
 
 - The FastAPI layer is intentionally thin. Route handlers mostly validate auth, unpack payloads, and delegate to runtime modules.
 - The packaged deployment profile is now explicit. `Containerfile`, `compose.yaml`, and `runtime.worker_loop` define the first supportable startup path for self-hosted use.
-- Persisted state is still local-state-backed, not an external platform dependency. `CLARITYOS_STATE_ROOT` makes the supported storage root explicit for packaged deployments.
+- Persisted state is still local-state-backed, not an external platform dependency. `CLARITYCLAW_STATE_ROOT` makes the supported storage root explicit for packaged deployments.
 - The queue is still local-state-backed, not an external broker. `jobs/` and `workers/` together still capture scheduling, leasing, retry, reclaim, and background execution behavior.
 - Operator views are part of the same runtime. The control plane reads the same persisted state used by assistant execution rather than maintaining a separate monitoring store.
 - The new operator runtime-posture layer is still bounded. It summarizes session, queue, worker, and storage posture without creating a separate automation or orchestration subsystem.

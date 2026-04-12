@@ -29,7 +29,7 @@ models:
 
         with patch.dict(
             model.os.environ,
-            {"CLARITYOS_MODELS_CONFIG": str(override_config)},
+            {"CLARITYCLAW_MODELS_CONFIG": str(override_config)},
             clear=True,
         ):
             loaded = model.load_model_config("test_fast")
