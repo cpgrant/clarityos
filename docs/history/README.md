@@ -20,7 +20,8 @@ Available snapshots:
 - `v1.5.md`
 - `v1.6.md`
 - `v1.7.md`
+- `v1.8.md`
 
-Latest archived milestone: `v1.7`
+Latest archived milestone: `v1.8`
 
-That `v1.7` snapshot is the current baseline archive while the repo begins `v1.8`.
+That `v1.8` snapshot is the current baseline archive while the repo begins `v1.9`.

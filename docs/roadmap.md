@@ -6,13 +6,13 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.7`
-- Current release: `v1.7`
-- Current focus: `v1.8` careful external integration
-- Next planned step: finish the `v1.8` release-polish checkpoint and operator walkthrough docs
-- Active execution plan: [`docs/v1.8-checklist.md`](./v1.8-checklist.md) and [`docs/v1.8-release-path.md`](./v1.8-release-path.md)
+- Latest completed milestone: `v1.8`
+- Current release: `v1.8`
+- Current focus: `v1.9` product refinement and supported workflows
+- Next planned step: shape the first `v1.9` checklist and release path
+- Active execution plan: none yet for `v1.9`
 - Companion planning notes: [`docs/differentiators.md`](./differentiators.md), [`docs/v1.8-checklist.md`](./v1.8-checklist.md), and [`docs/v1.8-release-path.md`](./v1.8-release-path.md)
-- Recent release notes: [`docs/v1.7-checklist.md`](./v1.7-checklist.md), [`docs/v1.7-release-path.md`](./v1.7-release-path.md), [`docs/architecture-v1.7.md`](./architecture-v1.7.md), and [`docs/history/v1.7.md`](./history/v1.7.md)
+- Recent release notes: [`docs/v1.8-checklist.md`](./v1.8-checklist.md), [`docs/v1.8-release-path.md`](./v1.8-release-path.md), and [`docs/history/v1.8.md`](./history/v1.8.md)
 
 ## Milestones
 
@@ -393,7 +393,7 @@ Explicitly not the focus:
 - broad SaaS-style multi-tenancy
 
 20. `v1.8` - careful external integration
-Status: in progress
+Status: completed
 
 Goal:
 Add one or two narrow integrations beyond the browser surfaces without turning ClarityClaw into a many-channel product prematurely.
@@ -403,7 +403,7 @@ Current progress note:
 - Slice 1 is complete through a bounded `/intake/email` adapter that preserves explicit email-origin metadata and maps into the normal session/workflow runtime
 - Slice 2 is complete through structured triage parsing, persisted `email_triage` artifacts, and operator-visible triage summaries
 - Slice 3 is complete through draft-reply approval requests, operator-visible approval state, and approved-draft handoff artifacts for email triage
-- Slice 4 is in progress through an explicit `v1.8` release-path document, a concrete operator walkthrough, and bounded release-validation drills for the narrow email-triage use case
+- Slice 4 is complete through an explicit `v1.8` release-path document, a concrete operator walkthrough, and bounded release-validation drills for the narrow email-triage use case
 
 Likely focus:
 

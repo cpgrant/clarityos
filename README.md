@@ -6,15 +6,20 @@ ClarityClaw aims at some of the usefulness of broad assistant gateways, but with
 
 ## Status
 
-- Current release: `v1.7`
-- Current focus: `v1.8` narrow email-triage integration
-- Next target: finish the `v1.8` release-polish checkpoint
+- Current release: `v1.8`
+- Current focus: `v1.9` product refinement and supported workflows
+- Next target: shape the first `v1.9` checklist and release path
 
 Direction after `v1.7`: `v1.8` should add one careful external integration without turning ClarityClaw into a many-channel product too early.
 
-`v1.8` is now underway rather than purely planned. The current checkpoint completes the bounded email intake, structured triage, explicit draft approval, and approved-draft handoff path, while the remaining work stays in release polish and supportable walkthrough documentation.
+`v1.8` is now the current release. It completes the first careful external-integration checkpoint: bounded email intake, structured triage, explicit draft approval, approved-draft handoff, and a supportable operator walkthrough for that flow.
 
-`v1.7` is now the current release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
+`v1.7` is the prior release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
+
+`v1.8` Slice 1 is complete through a bounded `/intake/email` adapter that preserves explicit email-origin metadata and maps into the normal session/workflow runtime.
+`v1.8` Slice 2 is complete through structured triage parsing, persisted `email_triage` artifacts, and operator-visible triage summaries.
+`v1.8` Slice 3 is complete through draft-reply approval requests, operator-visible approval state, and approved-draft handoff artifacts for email triage.
+`v1.8` Slice 4 is complete through an explicit `v1.8` release path, a concrete operator walkthrough, and bounded release-validation drills for the narrow email-triage use case.
 
 `v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
 `v1.7` Slice 2 is complete through an explicit `CLARITYCLAW_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
@@ -40,12 +45,12 @@ Direction after `v1.7`: `v1.8` should add one careful external integration witho
 
 `v1.5` Slice 4 is complete through an explicit release path for the first memory-maturity use case, including supported shape, out-of-scope boundaries, and release gates.
 
-Recent release notes live in `docs/v1.7-checklist.md`, `docs/v1.7-release-path.md`, `docs/architecture-v1.7.md`, and `docs/history/v1.7.md`.
+Recent release notes live in `docs/v1.8-checklist.md`, `docs/v1.8-release-path.md`, and `docs/history/v1.8.md`.
 
-The current `v1.8` move is careful external integration that still hands work to the existing session, workflow, queue, and operator runtime rather than creating channel sprawl.
-Active `v1.8` notes live in `docs/differentiators.md`, `docs/v1.8-checklist.md`, and `docs/v1.8-release-path.md`.
+The next move after `v1.8` is `v1.9`: refine supported workflows and product polish without losing the runtime's explicit boundaries.
+Companion notes for the released `v1.8` line live in `docs/differentiators.md`, `docs/v1.8-checklist.md`, and `docs/v1.8-release-path.md`.
 
-After `v1.7`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, proactive autonomy, and broad hosted-platform expansion are still explicitly deferred beyond this release line.
+After `v1.8`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, proactive autonomy, autonomous mailbox mutation, and broad hosted-platform expansion are still explicitly deferred beyond this release line.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -1603,7 +1608,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.7` is the current release. `v1.8` is now the next milestone, focused on careful external integration without losing the self-hosted runtime boundaries.
+`v1.8` is the current release. `v1.9` is now the next milestone, focused on product refinement and clearer supported workflows without losing the runtime's explicit boundaries.
 
 ### `v1.1` Acceptance Criteria
 

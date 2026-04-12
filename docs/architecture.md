@@ -10,6 +10,6 @@ Current release:
 
 Current focus:
 
-- `v1.8` careful external integration should build on the released `v1.7` packaged self-hosted runtime shape documented here.
+- `v1.9` product refinement should build on the released `v1.8` external-integration behavior and the packaged self-hosted runtime shape documented here until a new architecture snapshot is needed.
 
 Use the versioned document when discussing released behavior. Add a new versioned document when the architecture changes materially across milestones.
