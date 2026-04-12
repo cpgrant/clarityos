@@ -6,13 +6,13 @@ Update this file first when milestone scope changes, then keep the summary in th
 
 ## Current Status
 
-- Latest completed milestone: `v1.6`
-- Current release: `v1.6`
-- Current focus: `v1.7` deployment and operator maturity
-- Next planned step: `v1.7` release validation and release promotion
-- Active execution plan: [`docs/v1.7-checklist.md`](./v1.7-checklist.md)
+- Latest completed milestone: `v1.7`
+- Current release: `v1.7`
+- Current focus: `v1.8` careful external integration
+- Next planned step: shape the `v1.8` checklist and release path
+- Active execution plan: none yet for `v1.8`
 - Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
-- Recent release notes: [`docs/v1.6-checklist.md`](./v1.6-checklist.md), [`docs/v1.6-release-path.md`](./v1.6-release-path.md), [`docs/architecture-v1.6.md`](./architecture-v1.6.md), and [`docs/history/v1.6.md`](./history/v1.6.md)
+- Recent release notes: [`docs/v1.7-checklist.md`](./v1.7-checklist.md), [`docs/v1.7-release-path.md`](./v1.7-release-path.md), [`docs/architecture-v1.7.md`](./architecture-v1.7.md), and [`docs/history/v1.7.md`](./history/v1.7.md)
 
 ## Milestones
 
@@ -354,7 +354,7 @@ Explicitly not the focus:
 - hidden multi-agent orchestration that only exists in prompts
 
 19. `v1.7` - deployment and operator maturity
-Status: in progress
+Status: complete
 
 Goal:
 Make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
@@ -367,12 +367,12 @@ Companion notes:
 
 Current progress note:
 
-- `v1.7` is now the active milestone with a concrete execution checklist
+- `v1.7` is now the current release
 - Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker loop, and documented packaged startup posture for API and background execution
 - Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook
 - Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation
 - Slice 4 is complete through an explicit release path and release gates for the first supportable packaged self-hosted deployment profile
-- The next planned step is release validation and release promotion
+- Release validation and release promotion have passed for `v1.7`
 
 Planned focus:
 

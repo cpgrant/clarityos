@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant Operator as Operator or Runtime
+    participant API as FastAPI
+    participant Queue as Queue Layer
+    participant Loop as Packaged Worker Loop
+    participant Worker as Worker Runtime
+    participant Workflow as Workflow Runner
+    participant State as State Root
+
+    Operator->>API: POST /jobs
+    API->>Queue: create_job(...)
+    Queue->>State: Persist queued or scheduled job
+
+    Loop->>Worker: run_next_job(...)
+    Worker->>Queue: claim_next_job(...)
+    Queue->>State: Mark job running and leased
+
+    Worker->>Workflow: start_workflow or resume_workflow or start_child_workflow
+    Workflow->>State: Persist workflow, child contract, and lineage state
+    Workflow->>State: Refresh child synthesis, audit, and continuity-aware state
+
+    alt Job succeeds
+        Worker->>Queue: complete_job(...)
+    else Job fails
+        Worker->>Queue: fail_job(...)
+    end
+
+    Queue->>State: Persist final job state
+    Worker->>State: Release worker lease

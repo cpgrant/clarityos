@@ -4,20 +4,20 @@ Minimal, explicit AI runtime for workflows, queues, and typed memory.
 
 ## Status
 
-- Current release: `v1.6`
-- Current focus: `v1.7` deployment and operator maturity
-- Next target: `v1.7` release validation and release promotion
+- Current release: `v1.7`
+- Current focus: `v1.8` planning
+- Next target: shape the `v1.8` checklist and release path
 
-Direction after `v1.6`: `v1.7` should make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
+Direction after `v1.7`: `v1.8` should add one careful external integration without turning ClarityOS into a many-channel product too early.
 
-The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
-
-`v1.6` is now the current release. It completes the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
+`v1.7` is now the current release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
 
 `v1.7` Slice 1 is complete through a first `Containerfile`, `compose.yaml`, `.dockerignore`, a packaged worker-loop entrypoint, and a documented packaged runtime profile for API and background execution.
 `v1.7` Slice 2 is complete through an explicit `CLARITYOS_STATE_ROOT` contract, operator-visible storage and backup posture, a single packaged state mount, and a storage/backup playbook for repeatable self-hosted deployments.
 `v1.7` Slice 3 is complete through a runtime-posture dashboard summary, clearer packaged-runtime guidance in the operator console, and an operator runtime playbook for repeated self-hosted operation.
 `v1.7` Slice 4 is complete through an explicit release path for the first supportable packaged self-hosted deployment profile, including release gates and narrow support boundaries.
+
+`v1.6` is the prior release. It completed the bounded multi-agent quality layer: explicit delegation contracts, supervisor-style child-result synthesis, delegated-run auditability, and a narrow release path for supportable parent-child workflow coordination.
 
 `v1.6` Slice 1 is complete through explicit delegation contract fields, bounded child-task briefs, and earlier validation for invalid delegated work.
 `v1.6` Slice 2 is complete through supervisor-style child-result synthesis, bounded next-action guidance, and clearer child rollups in workflow inspection.
@@ -36,12 +36,12 @@ The active `v1.7` execution plan now lives in `docs/v1.7-checklist.md`.
 
 `v1.5` Slice 4 is complete through an explicit release path for the first memory-maturity use case, including supported shape, out-of-scope boundaries, and release gates.
 
-Recent release notes live in `docs/v1.6-checklist.md`, `docs/v1.6-release-path.md`, `docs/architecture-v1.6.md`, and `docs/history/v1.6.md`.
+Recent release notes live in `docs/v1.7-checklist.md`, `docs/v1.7-release-path.md`, `docs/architecture-v1.7.md`, and `docs/history/v1.7.md`.
 
-`v1.7` is now the active milestone. It should focus on deployment repeatability, operator ergonomics, and clearer packaged runtime expectations rather than expanding autonomy.
-Companion planning notes for `v1.7` live in `docs/differentiators.md` and `docs/v1.7-release-path.md`.
+The next planning move is `v1.8`: careful external integration that still hands work to the existing session, workflow, queue, and operator runtime rather than creating channel sprawl.
+Companion planning notes from the released `v1.7` line live in `docs/differentiators.md` and `docs/v1.7-release-path.md`.
 
-After `v1.6`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, and proactive autonomy are still explicitly deferred beyond this release line.
+After `v1.7`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, proactive autonomy, and broad hosted-platform expansion are still explicitly deferred beyond this release line.
 
 `v0.7` completes typed memory storage, bounded retrieval, explicit memory tools, workflow-linked memory summaries, and operator memory endpoints.
 
@@ -72,6 +72,7 @@ Older milestone snapshots live in `docs/history/`:
 - `docs/history/v1.4.md`
 - `docs/history/v1.5.md`
 - `docs/history/v1.6.md`
+- `docs/history/v1.7.md`
 
 ## What It Does
 
@@ -100,7 +101,7 @@ ClarityOS is intentionally better suited to supportable, inspectable assistant w
 API -> Agent -> Prompt/Tool -> Model/Tool Result -> Response
 ```
 
-Released architecture snapshots live in `docs/architecture-v1.6.md` and `docs/architecture-v1.4.md`.
+Released architecture snapshots live in `docs/architecture-v1.7.md`, `docs/architecture-v1.6.md`, and `docs/architecture-v1.4.md`.
 
 ## Project Structure
 
@@ -116,12 +117,14 @@ clarityos/
 ├── docs/
 │   ├── architecture-v1.4.md
 │   ├── architecture-v1.6.md
+│   ├── architecture-v1.7.md
 │   ├── architecture.md
 │   ├── diagrams/
 │   ├── playbooks/
 │   │   ├── README.md
 │   │   ├── incident-response.md
 │   │   ├── migration.md
+│   │   ├── operator-runtime.md
 │   │   ├── queue-cleanup.md
 │   │   ├── storage-backup.md
 │   │   ├── worker-repair.md
@@ -160,7 +163,8 @@ clarityos/
 │       ├── v1.3.md
 │       ├── v1.4.md
 │       ├── v1.5.md
-│       └── v1.6.md
+│       ├── v1.6.md
+│       └── v1.7.md
 ├── memories/
 ├── sessions/
 ├── jobs/
@@ -346,7 +350,7 @@ Embeddable widget frame:
 http://127.0.0.1:8000/widget
 ```
 
-## Packaged Run (`v1.7` Slice 1 Baseline)
+## Packaged Run (`v1.7` Baseline)
 
 The first packaged self-hosted profile now ships with:
 
@@ -1595,7 +1599,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 - queue/worker-backed async execution with operator recovery
 - no assistant UI, multi-channel surface, or plugin ecosystem yet
 
-`v1.6` is the current release. `v1.7` is now the next milestone, focused on deployment and operator maturity.
+`v1.7` is the current release. `v1.8` is now the next milestone, focused on careful external integration without losing the self-hosted runtime boundaries.
 
 ### `v1.1` Acceptance Criteria
 

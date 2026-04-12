@@ -24,3 +24,7 @@ README_v03.md
 
 # OS
 .DS_Store
+
+# Runtime state
+memories/
+sessions/
