@@ -120,7 +120,7 @@ def run_worker_loop(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a repeatable ClarityOS worker loop")
+    parser = argparse.ArgumentParser(description="Run a repeatable ClarityClaw worker loop")
     parser.add_argument("--name", default=os.environ.get(WORKER_NAME_ENV_VAR) or "packaged-worker")
     parser.add_argument(
         "--lease-seconds",

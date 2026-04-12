@@ -64,7 +64,7 @@ def fetch_url_tool(args: dict) -> dict:
     http_request = request.Request(
         url,
         headers={
-            "User-Agent": "ClarityOS/1.2 (+https://github.com/cpgrant/clarityos)",
+            "User-Agent": "ClarityClaw/1.2 (+https://github.com/cpgrant/clarityclaw)",
             "Accept": "text/plain,text/html,application/json",
         },
         method="GET",

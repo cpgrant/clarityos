@@ -99,7 +99,7 @@ OPERATOR_UI_PATH = BASE_DIR / "ui" / "operator.html"
 WIDGET_UI_PATH = BASE_DIR / "ui" / "widget.html"
 WIDGET_SCRIPT_PATH = BASE_DIR / "ui" / "widget.js"
 
-app = FastAPI(title="ClarityOS", version="1.7.0")
+app = FastAPI(title="ClarityClaw", version="1.7.0")
 OPERATOR_TOKEN_ENV_VAR = "CLARITYOS_OPERATOR_TOKEN"
 OPERATOR_AUTH_HEADER = "X-Operator-Token"
 SESSION_AUTH_HEADER = DEFAULT_SESSION_AUTH_HEADER
@@ -219,7 +219,7 @@ def normalize_origin_list(raw_value: str | None) -> list[str]:
 
 def widget_branding_config() -> dict[str, str]:
     return {
-        "name": os.getenv(WIDGET_BRAND_NAME_ENV_VAR, "ClarityOS Assistant"),
+        "name": os.getenv(WIDGET_BRAND_NAME_ENV_VAR, "ClarityClaw Assistant"),
         "tagline": os.getenv(
             WIDGET_BRAND_TAGLINE_ENV_VAR,
             "A thin web gateway over the existing session runtime.",
@@ -621,7 +621,7 @@ def widget_loader(request: Request):
         config = widget_runtime_config(service_origin=service_origin)
         if not config["enabled"]:
             return Response(
-                "window.console && console.warn('ClarityOS widget is disabled for this deployment.');",
+                "window.console && console.warn('ClarityClaw widget is disabled for this deployment.');",
                 media_type="application/javascript",
                 status_code=404,
                 headers={"Cache-Control": "no-store"},

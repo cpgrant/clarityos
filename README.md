@@ -1,4 +1,4 @@
-# ClarityOS
+# ClarityClaw
 
 Minimal, explicit AI runtime for workflows, queues, and typed memory.
 
@@ -8,7 +8,7 @@ Minimal, explicit AI runtime for workflows, queues, and typed memory.
 - Current focus: `v1.8` planning
 - Next target: shape the `v1.8` checklist and release path
 
-Direction after `v1.7`: `v1.8` should add one careful external integration without turning ClarityOS into a many-channel product too early.
+Direction after `v1.7`: `v1.8` should add one careful external integration without turning ClarityClaw into a many-channel product too early.
 
 `v1.7` is now the current release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
 
@@ -76,7 +76,7 @@ Older milestone snapshots live in `docs/history/`:
 
 ## What It Does
 
-Given an input, ClarityOS:
+Given an input, ClarityClaw:
 
 1. Loads agent config from YAML
 2. Either builds a prompt or executes an allowed tool
@@ -93,7 +93,7 @@ Given an input, ClarityOS:
 - Structured multi-step task execution: run bounded workflow-backed tasks with explicit state, traces, and inspectable intermediate results
 - Embeddable self-hosted assistant: power a narrow browser-first assistant through `/assistant`, `/widget`, and `/widget.js`
 
-ClarityOS is intentionally better suited to supportable, inspectable assistant work than to open-ended autonomous behavior, hidden learning, or many-channel consumer assistant sprawl.
+ClarityClaw is intentionally better suited to supportable, inspectable assistant work than to open-ended autonomous behavior, hidden learning, or many-channel consumer assistant sprawl.
 
 ## Architecture
 
@@ -695,7 +695,7 @@ Search repo files with a safe tool:
 ```bash
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
-  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityOS","pattern":"*.md","limit":10}}'
+  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityClaw","pattern":"*.md","limit":10}}'
 ```
 
 Read a specific file range with a safe tool:
@@ -1392,7 +1392,7 @@ curl -X POST http://127.0.0.1:8000/run \
 ```bash
 curl -X POST http://127.0.0.1:8000/run \
   -H "Content-Type: application/json" \
-  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityOS","pattern":"*.md","limit":10}}'
+  -d '{"agent":"researcher","tool":"search_files","tool_args":{"path":".","query":"ClarityClaw","pattern":"*.md","limit":10}}'
 ```
 
 ```bash
@@ -1603,7 +1603,7 @@ The detailed roadmap lives in `docs/roadmap.md`. Keep the README version short a
 
 ### `v1.1` Acceptance Criteria
 
-- ClarityOS supports explicit user conversation/session records that map into workflows, memory, and operator-visible history.
+- ClarityClaw supports explicit user conversation/session records that map into workflows, memory, and operator-visible history.
 - A first assistant surface exists, ideally web-first, that uses the existing runtime instead of introducing a second execution path.
 - Operators can inspect live conversations, related workflows, and recovery actions through a simple UI.
 - Any first channel adapter remains thin and transport-focused, with workflow, queue, memory, and recovery behavior still owned by the runtime core.

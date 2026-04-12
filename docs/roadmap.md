@@ -1,6 +1,6 @@
-# ClarityOS Roadmap
+# ClarityClaw Roadmap
 
-This document is the detailed milestone plan for ClarityOS.
+This document is the detailed milestone plan for ClarityClaw.
 
 Update this file first when milestone scope changes, then keep the summary in the repository root `README.md` aligned with it.
 
@@ -147,7 +147,7 @@ Release gates:
 Status: completed
 
 Goal:
-Deliver the first real “OpenClaw-ish” use case on top of the hardened runtime: one assistant surface, one explicit session model, and one thin operator-facing UI, while preserving ClarityOS’s stronger guarantees and bounded execution model.
+Deliver the first real “OpenClaw-ish” use case on top of the hardened runtime: one assistant surface, one explicit session model, and one thin operator-facing UI, while preserving ClarityClaw’s stronger guarantees and bounded execution model.
 
 Slices:
 
@@ -226,7 +226,7 @@ Delivered focus:
 Delivered use cases:
 
 - browser-first research assistant
-- repo-aware ClarityOS copilot
+- repo-aware ClarityClaw copilot
 - operator-visible troubleshooting assistant
 
 Explicitly not the focus:
@@ -246,7 +246,7 @@ Current progress note:
 Status: completed
 
 Goal:
-Strengthen the assistant's explicit tool layer so it can inspect, retrieve, and act usefully without losing ClarityOS's inspectability and policy boundaries.
+Strengthen the assistant's explicit tool layer so it can inspect, retrieve, and act usefully without losing ClarityClaw's inspectability and policy boundaries.
 
 Delivered focus:
 
@@ -357,7 +357,7 @@ Explicitly not the focus:
 Status: complete
 
 Goal:
-Make ClarityOS easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
+Make ClarityClaw easier to package, deploy, and operate repeatedly as a self-hosted assistant system.
 
 Companion notes:
 
@@ -396,7 +396,7 @@ Explicitly not the focus:
 Status: proposed
 
 Goal:
-Add one or two narrow integrations beyond the browser surfaces without turning ClarityOS into a many-channel product prematurely.
+Add one or two narrow integrations beyond the browser surfaces without turning ClarityClaw into a many-channel product prematurely.
 
 Likely focus:
 
@@ -418,7 +418,7 @@ Explicitly not the focus:
 Status: proposed
 
 Goal:
-Refine ClarityOS into a clearer, more polished self-hosted assistant product with explicit supported workflows and stronger day-to-day usability.
+Refine ClarityClaw into a clearer, more polished self-hosted assistant product with explicit supported workflows and stronger day-to-day usability.
 
 Likely focus:
 

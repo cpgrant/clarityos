@@ -6,7 +6,7 @@ from runtime.assistant_grounding import build_assistant_prompt_context, extract_
 
 class AssistantGroundingTests(unittest.TestCase):
     def test_extract_query_terms_prefers_project_keywords(self) -> None:
-        terms = extract_query_terms("How close is ClarityOS to an OpenClaw-like system?")
+        terms = extract_query_terms("How close is ClarityClaw to an OpenClaw-like system?")
 
         self.assertIn("clarityos", terms)
         self.assertIn("openclaw", terms)
@@ -51,7 +51,7 @@ class AssistantGroundingTests(unittest.TestCase):
 
         context = build_assistant_prompt_context(
             surface="assistant_web",
-            user_input="How close is ClarityOS to an OpenClaw-like system?",
+            user_input="How close is ClarityClaw to an OpenClaw-like system?",
             agent_name="researcher",
         )
 
@@ -118,7 +118,7 @@ class AssistantGroundingTests(unittest.TestCase):
 
         context = build_assistant_prompt_context(
             surface="assistant_web",
-            user_input="How does ClarityOS compare to OpenClaw?",
+            user_input="How does ClarityClaw compare to OpenClaw?",
             agent_name="researcher",
         )
 
@@ -163,7 +163,7 @@ class AssistantGroundingTests(unittest.TestCase):
 
         context = build_assistant_prompt_context(
             surface="assistant_web",
-            user_input="Summarize what v1.4 improved in ClarityOS.",
+            user_input="Summarize what v1.4 improved in ClarityClaw.",
             agent_name="researcher",
         )
 

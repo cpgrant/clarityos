@@ -6,7 +6,7 @@
   const branding = config.branding || {};
   const launcher = config.launcher || {};
   const allowedAgents = Array.isArray(config.allowed_agents) ? config.allowed_agents : [];
-  const title = script.dataset.title || branding.name || "ClarityOS Assistant";
+  const title = script.dataset.title || branding.name || "ClarityClaw Assistant";
   const requestedAgent = script.dataset.agent || branding.default_agent || "researcher";
   const subtitle = script.dataset.subtitle || branding.tagline || "Ask the session-backed assistant";
   const channel = script.dataset.channel || "embed_widget";

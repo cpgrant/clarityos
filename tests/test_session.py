@@ -196,7 +196,7 @@ class SessionTests(unittest.TestCase):
 
         append_session_message(
             session["session_id"],
-            content="How close is ClarityOS to an OpenClaw-like system?",
+            content="How close is ClarityClaw to an OpenClaw-like system?",
         )
 
         prompt_context = mock_start_workflow.call_args.kwargs["prompt_context"]

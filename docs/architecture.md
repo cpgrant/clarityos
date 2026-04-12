@@ -1,6 +1,6 @@
 # Architecture
 
-This directory contains versioned architecture notes for ClarityOS.
+This directory contains versioned architecture notes for ClarityClaw.
 
 Current release:
 

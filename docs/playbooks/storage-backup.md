@@ -2,7 +2,7 @@
 
 ## Use When
 
-- preparing a packaged or deployed ClarityOS environment for repeatable operation
+- preparing a packaged or deployed ClarityClaw environment for repeatable operation
 - verifying which persisted directories must survive restart, upgrade, or host replacement
 - planning backup and restore posture for a self-hosted deployment
 

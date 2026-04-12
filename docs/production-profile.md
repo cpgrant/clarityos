@@ -1,6 +1,6 @@
 # Production Profile
 
-This document defines the current `v1.0` trusted-runtime deployment posture for ClarityOS.
+This document defines the current `v1.0` trusted-runtime deployment posture for ClarityClaw.
 
 ## Goal
 
@@ -17,7 +17,7 @@ The associated first production use case and release gates live in `docs/v1.0-re
 
 ## Config Selection
 
-ClarityOS now supports env-selected config files so production defaults do not have to overwrite local development files.
+ClarityClaw now supports env-selected config files so production defaults do not have to overwrite local development files.
 
 - `CLARITYOS_AGENTS_CONFIG`
 - `CLARITYOS_POLICIES_CONFIG`

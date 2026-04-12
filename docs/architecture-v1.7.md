@@ -1,4 +1,4 @@
-# ClarityOS Runtime Architecture v1.7
+# ClarityClaw Runtime Architecture v1.7
 
 This document describes the released runtime architecture for `v1.7`.
 
@@ -17,7 +17,7 @@ Scope:
 
 ## Summary
 
-ClarityOS `v1.7` keeps the thin FastAPI-over-runtime shape from `v1.6`, but it now makes the first packaged self-hosted deployment boundary explicit rather than depending on repo habits and local operator knowledge.
+ClarityClaw `v1.7` keeps the thin FastAPI-over-runtime shape from `v1.6`, but it now makes the first packaged self-hosted deployment boundary explicit rather than depending on repo habits and local operator knowledge.
 
 Compared with the released `v1.6` snapshot, the `v1.7` shape adds a clearer packaged deployment layer through:
 
@@ -48,7 +48,7 @@ Source:
 
 ## System Context View
 
-This view shows ClarityOS as a packaged self-hosted system in relation to assistant users, host sites, operators, and model providers.
+This view shows ClarityClaw as a packaged self-hosted system in relation to assistant users, host sites, operators, and model providers.
 
 Source:
 

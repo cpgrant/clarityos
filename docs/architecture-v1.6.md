@@ -1,4 +1,4 @@
-# ClarityOS Runtime Architecture v1.6
+# ClarityClaw Runtime Architecture v1.6
 
 This document describes the released runtime architecture for `v1.6`.
 
@@ -16,7 +16,7 @@ Scope:
 
 ## Summary
 
-ClarityOS `v1.6` remains a thin FastAPI service over an explicit runtime. The API layer exposes assistant, widget, operator, session, workflow, job, worker, memory, approval, and state endpoints in [`api/main.py`](../api/main.py). Most behavior is implemented in runtime modules rather than in route handlers.
+ClarityClaw `v1.6` remains a thin FastAPI service over an explicit runtime. The API layer exposes assistant, widget, operator, session, workflow, job, worker, memory, approval, and state endpoints in [`api/main.py`](../api/main.py). Most behavior is implemented in runtime modules rather than in route handlers.
 
 Compared with the earlier `v1.4` snapshot, the released `v1.6` shape is still container-light, but it now makes two important quality layers explicit in runtime state rather than leaving them implicit in prompts:
 
@@ -44,7 +44,7 @@ Source:
 
 ## System Context View
 
-This view shows ClarityOS as a deployed system in relation to assistant users, host sites, operators, and model providers.
+This view shows ClarityClaw as a deployed system in relation to assistant users, host sites, operators, and model providers.
 
 Source:
 

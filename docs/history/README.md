@@ -1,6 +1,6 @@
 # Historical Docs
 
-This directory keeps milestone README snapshots that document earlier stages of ClarityOS.
+This directory keeps milestone README snapshots that document earlier stages of ClarityClaw.
 
 Current canonical documentation lives in the repository root `README.md`.
 

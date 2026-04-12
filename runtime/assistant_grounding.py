@@ -226,12 +226,12 @@ def _extract_roadmap_summary() -> str:
 def repo_grounding_context() -> list[dict[str, str]]:
     return [
         {
-            "title": "ClarityOS repository status",
+            "title": "ClarityClaw repository status",
             "source": "README.md",
             "content": _extract_readme_status_section(),
         },
         {
-            "title": "ClarityOS roadmap summary",
+            "title": "ClarityClaw roadmap summary",
             "source": "docs/roadmap.md",
             "content": _extract_roadmap_summary(),
         },
@@ -333,7 +333,7 @@ def answer_structure_hint(user_input: str) -> dict[str, str] | None:
     if "comparison" in modes and "plan" in modes:
         content = (
             "Use this answer shape:\n"
-            "- Current position: where ClarityOS stands now in the compared area\n"
+            "- Current position: where ClarityClaw stands now in the compared area\n"
             "- Similarities: the strongest overlaps worth naming\n"
             "- Gaps: the main missing capabilities or weaker areas\n"
             "- Next milestone priority: the smallest next move that closes the most important gap"
@@ -343,7 +343,7 @@ def answer_structure_hint(user_input: str) -> dict[str, str] | None:
             "Use this answer shape:\n"
             "- Current position: the short bottom line first\n"
             "- Similarities: where the systems are meaningfully alike\n"
-            "- Gaps: what ClarityOS still lacks or does differently\n"
+            "- Gaps: what ClarityClaw still lacks or does differently\n"
             "- Recommendation: what to prioritize next"
         )
     elif "summary" in modes:

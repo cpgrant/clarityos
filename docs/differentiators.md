@@ -1,6 +1,6 @@
-# ClarityOS Differentiators
+# ClarityClaw Differentiators
 
-This document tracks standout product directions that could make ClarityOS meaningfully better than a generic assistant wrapper.
+This document tracks standout product directions that could make ClarityClaw meaningfully better than a generic assistant wrapper.
 
 These are not all committed roadmap items. They are strategy notes to help identify which ideas are worth protecting as the runtime evolves.
 
@@ -8,7 +8,7 @@ These are not all committed roadmap items. They are strategy notes to help ident
 
 ### Auditable Continuity
 
-ClarityOS should be able to continue long-running assistant threads without turning continuity into hidden prompt stuffing.
+ClarityClaw should be able to continue long-running assistant threads without turning continuity into hidden prompt stuffing.
 
 What makes this different:
 
@@ -19,7 +19,7 @@ What makes this different:
 
 ### Explicit Memory, Not Vibes
 
-ClarityOS already treats memory as typed state rather than an implicit side effect. Future work should preserve that shape.
+ClarityClaw already treats memory as typed state rather than an implicit side effect. Future work should preserve that shape.
 
 What makes this different:
 
@@ -68,7 +68,7 @@ Examples:
 
 ### Operator-Visible Personal Continuity
 
-ClarityOS could become unusually strong at "personal assistant over time" behavior without becoming spooky or opaque.
+ClarityClaw could become unusually strong at "personal assistant over time" behavior without becoming spooky or opaque.
 
 Promising shape:
 
@@ -78,7 +78,7 @@ Promising shape:
 
 ## Filters For New Ideas
 
-New "winner feature" ideas are more likely to fit ClarityOS well if they are:
+New "winner feature" ideas are more likely to fit ClarityClaw well if they are:
 
 - explicit rather than magical
 - inspectable rather than hidden
@@ -86,4 +86,4 @@ New "winner feature" ideas are more likely to fit ClarityOS well if they are:
 - user-controlled rather than assumed
 - operator-supportable rather than consumer-app-only
 
-If an idea only works by hiding state, masking autonomy, or weakening runtime visibility, it is probably not a good ClarityOS differentiator.
+If an idea only works by hiding state, masking autonomy, or weakening runtime visibility, it is probably not a good ClarityClaw differentiator.

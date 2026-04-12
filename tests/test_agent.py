@@ -58,7 +58,7 @@ class RunAgentTests(unittest.TestCase):
         self.docs_dir.mkdir()
         self.nested_file = self.docs_dir / "guide.md"
         self.nested_file.write_text(
-            "# Guide\nClarityOS supports sessions.\nClarityOS supports workflows.\n",
+            "# Guide\nClarityClaw supports sessions.\nClarityClaw supports workflows.\n",
             encoding="utf-8",
         )
         self.outside_file = self.root_dir / "outside.txt"
@@ -714,7 +714,7 @@ agents:
         self.assertEqual(result["tool_output"]["path"], "docs/guide.md")
         self.assertEqual(result["tool_output"]["line_count"], 2)
         self.assertEqual(result["tool_output"]["total_line_count"], 3)
-        self.assertIn("ClarityOS supports sessions.", result["tool_output"]["content"])
+        self.assertIn("ClarityClaw supports sessions.", result["tool_output"]["content"])
 
         payload = self.latest_log()
 
@@ -726,12 +726,12 @@ agents:
             "",
             "researcher",
             tool_name="search_files",
-            tool_args={"path": ".", "query": "ClarityOS", "pattern": "*.md", "limit": 5},
+            tool_args={"path": ".", "query": "ClarityClaw", "pattern": "*.md", "limit": 5},
         )
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["tool"], "search_files")
-        self.assertEqual(result["tool_output"]["query"], "ClarityOS")
+        self.assertEqual(result["tool_output"]["query"], "ClarityClaw")
         self.assertGreaterEqual(result["tool_output"]["result_count"], 1)
         self.assertEqual(result["tool_output"]["hits"][0]["path"], "docs/guide.md")
         self.assertIn("match_preview", result["tool_output"]["hits"][0])
@@ -740,7 +740,7 @@ agents:
         payload = self.latest_log()
 
         self.assertEqual(payload["result"]["tool"]["name"], "search_files")
-        self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "ClarityOS")
+        self.assertEqual(payload["result"]["tool"]["output"]["value"]["query"], "ClarityClaw")
 
     def test_run_agent_list_directory_tool_success(self) -> None:
         result = agent.run_agent(
@@ -1431,7 +1431,7 @@ agents:
     def test_call_tool_lists_and_searches_repo_files(self) -> None:
         listed = tools.call_tool("list_files", {"path": ".", "pattern": "*.md"})
         directory = tools.call_tool("list_directory", {"path": ".", "limit": 10})
-        searched = tools.call_tool("search_files", {"path": ".", "query": "ClarityOS", "pattern": "*.md"})
+        searched = tools.call_tool("search_files", {"path": ".", "query": "ClarityClaw", "pattern": "*.md"})
         ranged = tools.call_tool("read_file_range", {"path": "docs/guide.md", "start_line": 2, "end_line": 2})
 
         self.assertTrue(listed["ok"])
@@ -1442,7 +1442,7 @@ agents:
         self.assertEqual(searched["output"]["value"]["hits"][0]["path"], "docs/guide.md")
         self.assertIn("match_preview", searched["output"]["value"]["hits"][0])
         self.assertTrue(ranged["ok"])
-        self.assertEqual(ranged["output"]["value"]["content"], "ClarityOS supports sessions.")
+        self.assertEqual(ranged["output"]["value"]["content"], "ClarityClaw supports sessions.")
 
     def test_call_tool_inspects_session_and_workflow(self) -> None:
         created_session = session.create_session(title="Inspect me", agent="researcher")
