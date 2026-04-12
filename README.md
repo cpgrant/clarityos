@@ -1,8 +1,8 @@
 # ClarityClaw
 
-Minimal, explicit AI runtime for workflows, queues, and typed memory.
+Minimal, explicit AI runtime system for sessions, workflows, queues, and typed memory.
 
-ClarityClaw aims at some of the usefulness broad assistant gateways point toward, but with more clarity, inspectability, boundedness, and operator support.
+ClarityClaw aims at some of the usefulness of broad assistant gateways, but with stronger clarity, inspectability, bounded execution, operator support, and a Python-first architecture.
 
 ## Status
 
