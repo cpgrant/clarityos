@@ -15,6 +15,7 @@ ROADMAP_PATH = BASE_DIR / "docs" / "roadmap.md"
 HISTORY_DIR = BASE_DIR / "docs" / "history"
 GROUNDING_SURFACES = {"assistant_web", "embed_widget"}
 PROJECT_KEYWORDS = {
+    "clarityclaw",
     "clarityos",
     "roadmap",
     "milestone",
@@ -105,6 +106,7 @@ SUMMARY_KEYWORDS = {
     "summary",
     "summarise",
     "briefly",
+    "improved",
     "what did",
     "what changed",
     "what improved",
@@ -175,6 +177,10 @@ STOP_WORDS = {
     "project",
 }
 MAX_GROUNDED_EXCERPTS = 4
+QUERY_TERM_ALIASES = {
+    "clarityclaw": ("clarityos",),
+    "clarityos": ("clarityclaw",),
+}
 
 
 def assistant_surface_grounding_enabled(surface: str | None) -> bool:
@@ -387,6 +393,9 @@ def extract_query_terms(user_input: str) -> list[str]:
     for keyword in sorted(PROJECT_KEYWORDS, key=len, reverse=True):
         if keyword in lowered and keyword not in prioritized:
             prioritized.append(keyword)
+            for alias in QUERY_TERM_ALIASES.get(keyword, ()):
+                if alias not in prioritized:
+                    prioritized.append(alias)
         if len(prioritized) >= 3:
             return prioritized
 

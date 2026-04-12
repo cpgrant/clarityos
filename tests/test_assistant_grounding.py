@@ -8,7 +8,7 @@ class AssistantGroundingTests(unittest.TestCase):
     def test_extract_query_terms_prefers_project_keywords(self) -> None:
         terms = extract_query_terms("How close is ClarityClaw to an OpenClaw-like system?")
 
-        self.assertIn("clarityos", terms)
+        self.assertIn("clarityclaw", terms)
         self.assertIn("openclaw", terms)
 
     @patch("runtime.assistant_grounding.guarded_tool_call")
