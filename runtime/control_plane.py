@@ -50,6 +50,242 @@ def truncate_text(value: str | None, *, limit: int = 120) -> str | None:
     return value[: limit - 3].rstrip() + "..."
 
 
+def email_triage_approval_detail(
+    approval: dict | None,
+    *,
+    request_approval_available: bool,
+    has_draft_reply: bool,
+) -> str:
+    if approval is None:
+        if request_approval_available:
+            return "Draft suggestion is available, but approval has not been requested yet."
+        if has_draft_reply:
+            return "Draft suggestion is present, but approval cannot be requested from the current state."
+        return "No draft reply is available for approval."
+
+    status = approval.get("status")
+    if status == "pending":
+        return "Awaiting operator decision before any outward email action."
+    if status == "approved":
+        return "Draft review is approved. v1.8 still stops short of sending email automatically."
+    if status == "denied":
+        return "Draft review was denied. Revise the draft or leave the email unsent."
+    if status == "aborted":
+        return "Draft review was aborted. Request approval again if the draft should be reconsidered."
+    if status == "resumed":
+        return "Draft review was resumed in workflow history."
+    return "Draft approval state is available."
+
+
+def email_triage_outcome_summary(
+    approval: dict | None,
+    *,
+    request_approval_available: bool,
+    has_draft_reply: bool,
+    has_approved_handoff: bool,
+) -> dict[str, str]:
+    if approval is None:
+        if request_approval_available:
+            return {
+                "label": "Draft ready for review",
+                "operator_next_step": "Request draft approval if this suggestion should move into explicit review.",
+                "outward_action_detail": "No outward email action is supported in v1.8, even after review begins.",
+            }
+        if has_draft_reply:
+            return {
+                "label": "Draft present but not actionable",
+                "operator_next_step": "Inspect the workflow state or regenerate triage before requesting approval again.",
+                "outward_action_detail": "No outward email action is available from the current draft state.",
+            }
+        return {
+            "label": "No draft suggestion",
+            "operator_next_step": "Review the triage result or rerun the workflow if a reply suggestion is needed.",
+            "outward_action_detail": "There is no draft suggestion to review or send.",
+        }
+
+    status = approval.get("status")
+    if status == "pending":
+        return {
+            "label": "Pending operator review",
+            "operator_next_step": "Approve, deny, or abort the draft review request.",
+            "outward_action_detail": "The draft cannot move beyond review until an operator decision is recorded.",
+        }
+    if status == "approved":
+        if has_approved_handoff:
+            return {
+                "label": "Approved handoff ready",
+                "operator_next_step": "Use the approved draft handoff artifact for manual follow-through outside ClarityClaw.",
+                "outward_action_detail": "The handoff artifact is ready for manual use, but automatic send behavior remains out of scope for v1.8.",
+            }
+        return {
+            "label": "Approved for human follow-through",
+            "operator_next_step": "Create an approved draft handoff artifact or copy and adapt the draft outside ClarityClaw; v1.8 still stops short of sending email.",
+            "outward_action_detail": "Approval confirms the draft is acceptable to use, but it does not unlock automatic send behavior.",
+        }
+    if status == "denied":
+        return {
+            "label": "Draft denied",
+            "operator_next_step": "Revise the draft or leave the message unsent. Approval can be requested again after revision.",
+            "outward_action_detail": "No outward email action is available after a denied review.",
+        }
+    if status == "aborted":
+        return {
+            "label": "Approval aborted",
+            "operator_next_step": "Request approval again only if the draft should be reconsidered.",
+            "outward_action_detail": "No outward email action is available after an aborted review.",
+        }
+    if status == "resumed":
+        return {
+            "label": "Approval consumed by workflow history",
+            "operator_next_step": "Inspect the resumed workflow run before taking any further action on the draft.",
+            "outward_action_detail": "v1.8 still does not send email automatically after a workflow resume.",
+        }
+    return {
+        "label": "Draft review state available",
+        "operator_next_step": "Inspect the latest approval state before acting on the draft.",
+        "outward_action_detail": "No automatic outward email action is available in v1.8.",
+    }
+
+
+def email_triage_summary(artifacts: list[dict], approvals: list[dict]) -> dict | None:
+    email_triage_artifacts = [
+        artifact
+        for artifact in artifacts
+        if artifact.get("kind") == "email_triage" and isinstance(artifact.get("value"), dict)
+    ]
+    if not email_triage_artifacts:
+        return None
+
+    latest = max(
+        email_triage_artifacts,
+        key=lambda artifact: artifact.get("updated_at") or artifact.get("created_at") or "",
+    )
+    value = latest.get("value") or {}
+    source = value.get("source") if isinstance(value.get("source"), dict) else {}
+    email = value.get("email") if isinstance(value.get("email"), dict) else {}
+    triage = value.get("triage") if isinstance(value.get("triage"), dict) else {}
+    fields = triage.get("fields") if isinstance(triage.get("fields"), dict) else {}
+    missing_fields = triage.get("missing_fields") if isinstance(triage.get("missing_fields"), list) else []
+    approval_matches = []
+    for approval in approvals:
+        action = approval.get("action")
+        if not isinstance(action, dict):
+            continue
+        if action.get("kind") == "email_draft_review" and action.get("artifact_id") == latest["artifact_id"]:
+            approval_matches.append(approval)
+    latest_approval = None
+    if approval_matches:
+        latest_approval = max(
+            approval_matches,
+            key=lambda approval: approval.get("updated_at") or approval.get("created_at") or "",
+        )
+
+    request_approval_available = bool(fields.get("draft_reply")) and (
+        latest_approval is None or latest_approval.get("status") in {"denied", "aborted"}
+    )
+    approval_payload = (
+        {
+            "approval_id": latest_approval["approval_id"],
+            "status": latest_approval.get("status"),
+            "approve_path": f"/approvals/{latest_approval['approval_id']}/approve",
+            "deny_path": f"/approvals/{latest_approval['approval_id']}/deny",
+            "abort_path": f"/approvals/{latest_approval['approval_id']}/abort",
+        }
+        if latest_approval is not None
+        else None
+    )
+    handoff_matches = [
+        artifact
+        for artifact in artifacts
+        if artifact.get("kind") == "email_draft_handoff"
+        and (
+            (
+                isinstance(artifact.get("metadata"), dict)
+                and artifact["metadata"].get("triage_artifact_id") == latest["artifact_id"]
+            )
+            or (
+                isinstance(artifact.get("value"), dict)
+                and isinstance(artifact["value"].get("source"), dict)
+                and artifact["value"]["source"].get("triage_artifact_id") == latest["artifact_id"]
+            )
+        )
+    ]
+    latest_handoff = None
+    if handoff_matches:
+        latest_handoff = max(
+            handoff_matches,
+            key=lambda artifact: artifact.get("updated_at") or artifact.get("created_at") or "",
+        )
+    handoff_payload = (
+        {
+            "artifact_id": latest_handoff["artifact_id"],
+            "path": f"/artifacts/{latest_handoff['artifact_id']}",
+            "created_at": latest_handoff.get("created_at"),
+            "updated_at": latest_handoff.get("updated_at"),
+            "draft_reply_preview": truncate_text(
+                (
+                    latest_handoff.get("value", {}).get("handoff", {}).get("draft_reply")
+                    if isinstance(latest_handoff.get("value"), dict)
+                    and isinstance(latest_handoff["value"].get("handoff"), dict)
+                    else None
+                ),
+                limit=240,
+            ),
+            "operator_guidance": (
+                latest_handoff.get("value", {}).get("handoff", {}).get("operator_guidance")
+                if isinstance(latest_handoff.get("value"), dict)
+                and isinstance(latest_handoff["value"].get("handoff"), dict)
+                else None
+            ),
+        }
+        if latest_handoff is not None
+        else None
+    )
+    create_handoff_available = approval_payload is not None and approval_payload.get("status") == "approved" and handoff_payload is None
+    outcome = email_triage_outcome_summary(
+        approval_payload,
+        request_approval_available=request_approval_available,
+        has_draft_reply=bool(fields.get("draft_reply")),
+        has_approved_handoff=handoff_payload is not None,
+    )
+
+    return {
+        "artifact_id": latest["artifact_id"],
+        "path": f"/artifacts/{latest['artifact_id']}",
+        "created_at": latest.get("created_at"),
+        "updated_at": latest.get("updated_at"),
+        "account": source.get("account"),
+        "mailbox": source.get("mailbox"),
+        "thread_id": source.get("thread_id"),
+        "message_id": source.get("message_id"),
+        "received_at": source.get("received_at"),
+        "subject": email.get("subject"),
+        "from": email.get("from"),
+        "bottom_line": fields.get("bottom_line"),
+        "urgency": fields.get("urgency"),
+        "suggested_bucket": fields.get("suggested_bucket"),
+        "recommended_next_action": fields.get("recommended_next_action"),
+        "draft_reply": fields.get("draft_reply"),
+        "draft_reply_preview": truncate_text(fields.get("draft_reply"), limit=240),
+        "missing_fields": list(missing_fields),
+        "raw_output_preview": truncate_text(triage.get("raw_output"), limit=280),
+        "approval": approval_payload,
+        "approval_detail": email_triage_approval_detail(
+            approval_payload,
+            request_approval_available=request_approval_available,
+            has_draft_reply=bool(fields.get("draft_reply")),
+        ),
+        "approval_outcome": outcome["label"],
+        "operator_next_step": outcome["operator_next_step"],
+        "outward_action_detail": outcome["outward_action_detail"],
+        "approved_handoff": handoff_payload,
+        "create_handoff_path": f"/artifacts/{latest['artifact_id']}/email-approved-draft-handoff",
+        "create_handoff_available": create_handoff_available,
+        "request_approval_path": f"/artifacts/{latest['artifact_id']}/email-draft-approval",
+        "request_approval_available": request_approval_available,
+    }
+
+
 def continuity_recommendation_detail(recommendation: str) -> str:
     if recommendation == "compact_now":
         return "Older session history has grown past the initial compaction threshold."
@@ -1153,7 +1389,7 @@ def recover_workflow(
     }
 
 
-def workflow_actions(workflow, approvals: list[dict]) -> dict:
+def workflow_actions(workflow, approvals: list[dict], *, email_triage: dict | None = None) -> dict:
     step = current_step(workflow)
     pending_approvals = [approval for approval in approvals if approval["status"] == "pending"]
     jobs = related_jobs_for_workflow(workflow)
@@ -1193,6 +1429,16 @@ def workflow_actions(workflow, approvals: list[dict]) -> dict:
             }
             for approval in pending_approvals
         ],
+        "request_email_draft_approval": {
+            "available": bool(email_triage and email_triage.get("request_approval_available")),
+            "artifact_id": email_triage.get("artifact_id") if email_triage is not None else None,
+            "path": email_triage.get("request_approval_path") if email_triage is not None else None,
+        },
+        "create_email_draft_handoff": {
+            "available": bool(email_triage and email_triage.get("create_handoff_available")),
+            "artifact_id": email_triage.get("artifact_id") if email_triage is not None else None,
+            "path": email_triage.get("create_handoff_path") if email_triage is not None else None,
+        },
         "artifacts": [
             {
                 "artifact_id": artifact["artifact_id"],
@@ -1228,10 +1474,9 @@ def workflow_control_view(workflow_id: str) -> dict:
     workflow = load_workflow(workflow_id)
     snapshot = workflow_snapshot(workflow)
     approvals = [approval_summary(approval) for approval in list_approvals_for_workflow(workflow_id)]
-    artifacts = [
-        artifact_summary(artifact)
-        for artifact in list_artifacts_for_workflow(workflow_id)
-    ]
+    loaded_artifacts = list_artifacts_for_workflow(workflow_id)
+    artifacts = [artifact_summary(artifact) for artifact in loaded_artifacts]
+    email_triage = email_triage_summary(loaded_artifacts, approvals)
     memories = [memory_summary(memory) for memory in workflow.memories]
     jobs = related_jobs_for_workflow(workflow)
     workers, missing_worker_ids = related_workers_for_jobs(jobs)
@@ -1272,6 +1517,7 @@ def workflow_control_view(workflow_id: str) -> dict:
         },
         "approvals": approvals,
         "artifacts": artifacts,
+        "email_triage": email_triage,
         "memories": memories,
         "shared_memories": [dict(memory) for memory in workflow.shared_memories],
         "jobs": jobs,
@@ -1297,7 +1543,7 @@ def workflow_control_view(workflow_id: str) -> dict:
         "delegation_audit": delegation_audit,
         "failure": workflow_failure_view(workflow),
         "missing_child_workflow_ids": missing_child_workflow_ids,
-        "actions": workflow_actions(workflow, approvals),
+        "actions": workflow_actions(workflow, approvals, email_triage=email_triage),
     }
 
 

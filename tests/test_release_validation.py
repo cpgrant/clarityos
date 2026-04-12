@@ -8,8 +8,10 @@ from unittest.mock import patch
 import runtime.approval as approval
 import runtime.artifact as artifact
 import runtime.control_plane as control_plane
+import runtime.email_intake as email_intake
 import runtime.memory as memory
 import runtime.queue as queue
+import runtime.session as session
 import runtime.trace as trace
 import runtime.worker as worker
 import runtime.workflow as workflow
@@ -25,6 +27,7 @@ class ReleaseValidationTests(unittest.TestCase):
         self.memory_dir = self.root_dir / "memories"
         self.job_dir = self.root_dir / "jobs"
         self.log_dir = self.root_dir / "logs"
+        self.session_dir = self.root_dir / "sessions"
         self.worker_dir = self.root_dir / "workers"
         self.workflow_dir = self.root_dir / "workflows"
         self.approval_dir.mkdir()
@@ -32,6 +35,7 @@ class ReleaseValidationTests(unittest.TestCase):
         self.memory_dir.mkdir()
         self.job_dir.mkdir()
         self.log_dir.mkdir()
+        self.session_dir.mkdir()
         self.worker_dir.mkdir()
         self.workflow_dir.mkdir()
         self.patchers = [
@@ -39,6 +43,7 @@ class ReleaseValidationTests(unittest.TestCase):
             patch.object(artifact, "ARTIFACT_DIR", self.artifact_dir),
             patch.object(memory, "MEMORY_DIR", self.memory_dir),
             patch.object(queue, "JOB_DIR", self.job_dir),
+            patch.object(session, "SESSION_DIR", self.session_dir),
             patch.object(trace, "LOG_DIR", self.log_dir),
             patch.object(worker, "WORKER_DIR", self.worker_dir),
             patch.object(workflow, "WORKFLOW_DIR", self.workflow_dir),
@@ -217,6 +222,75 @@ class ReleaseValidationTests(unittest.TestCase):
                 replayed = workflow_runner.replay_workflow(workflow_id)
                 self.assertEqual(replayed["source_status"], "failed")
                 self.assertEqual(replayed["result"]["status"], "success")
+
+    def test_email_triage_intake_to_draft_approval_drill(self) -> None:
+        workflow_state = workflow.create_workflow_state(
+            run_id="wf-email-release",
+            agent="researcher",
+            run_type="model",
+            request={
+                "input": "Review this email for narrow triage.",
+                "agent": "researcher",
+                "tool": None,
+                "tool_args": None,
+            },
+        )
+        workflow.complete_workflow(workflow_state)
+        workflow.write_workflow(workflow_state)
+
+        def fake_append_session_message(session_id: str, **_kwargs) -> dict:
+            return {
+                "session": session.session_snapshot(session.load_session(session_id)),
+                "workflow_result": {
+                    "status": "success",
+                    "output": (
+                        "Bottom line: Resend the invoice.\n"
+                        "Urgency: Medium\n"
+                        "Suggested bucket: Billing\n"
+                        "Recommended next action: Confirm the invoice number and resend it today.\n"
+                        "Draft reply: Hi Alex,\nWe can resend that invoice today."
+                    ),
+                    "workflow": workflow.workflow_snapshot(workflow_state),
+                    "artifacts": [],
+                },
+            }
+
+        with patch.object(email_intake, "append_session_message", side_effect=fake_append_session_message):
+            intake_result = email_intake.intake_email(
+                {
+                    "account": "ops@example.com",
+                    "mailbox": "inbox",
+                    "thread_id": "thread-123",
+                    "message_id": "msg-123",
+                    "subject": "Need invoice copy",
+                    "from": "Alex <alex@example.com>",
+                    "to": ["ops@example.com"],
+                    "received_at": "2026-04-12T10:00:00+00:00",
+                    "text_body": "Please resend the invoice PDF.",
+                },
+                agent="researcher",
+            )
+
+        triage_artifact = artifact.load_artifact(intake_result["triage_artifact"]["artifact_id"])
+        self.assertEqual(triage_artifact["kind"], "email_triage")
+        self.assertEqual(
+            triage_artifact["value"]["triage"]["fields"]["recommended_next_action"],
+            "Confirm the invoice number and resend it today.",
+        )
+
+        approval_request = email_intake.request_email_draft_approval(triage_artifact["artifact_id"])
+        self.assertEqual(approval_request["status"], "pending")
+        approved = approval.approve_approval(approval_request["approval_id"])
+        self.assertEqual(approved["status"], "approved")
+        handoff = email_intake.create_email_draft_handoff(triage_artifact["artifact_id"])
+        self.assertEqual(handoff["kind"], "email_draft_handoff")
+
+        workflow_view = control_plane.workflow_control_view(workflow_state.workflow_id)
+        self.assertEqual(workflow_view["email_triage"]["approval"]["status"], "approved")
+        self.assertEqual(workflow_view["email_triage"]["approval_outcome"], "Approved handoff ready")
+        self.assertEqual(workflow_view["email_triage"]["approved_handoff"]["artifact_id"], handoff["artifact_id"])
+        self.assertIn("manual follow-through", workflow_view["email_triage"]["operator_next_step"])
+        self.assertIn("automatic send behavior remains out of scope", workflow_view["email_triage"]["outward_action_detail"])
 
         retry_state = workflow.create_workflow_state(
             run_id="wf-retry-drill",

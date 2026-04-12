@@ -104,6 +104,98 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response["health"]["retry_backlog_count"], 1)
         mock_queue_health_view.assert_called_once_with()
 
+    def test_email_intake_requires_operator_token_when_configured(self) -> None:
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=True):
+            response = main.email_intake(
+                {
+                    "account": "ops@example.com",
+                    "message_id": "msg-123",
+                    "snippet": "Please resend the invoice.",
+                }
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "OperatorAuthError",
+                    "message": "Operator token is required via `X-Operator-Token`",
+                },
+            },
+        )
+
+    @patch.object(main, "intake_email", return_value={"session_id": "session-123", "session_created": True})
+    def test_email_intake_passthrough(self, mock_intake_email) -> None:
+        response = main.email_intake(
+            {
+                "account": "ops@example.com",
+                "message_id": "msg-123",
+                "snippet": "Please resend the invoice.",
+                "agent": "researcher",
+            }
+        )
+
+        self.assertEqual(response["session_id"], "session-123")
+        mock_intake_email.assert_called_once_with(
+            {
+                "account": "ops@example.com",
+                "message_id": "msg-123",
+                "snippet": "Please resend the invoice.",
+                "agent": "researcher",
+            },
+            agent="researcher",
+            session_id=None,
+        )
+
+    def test_artifact_request_email_draft_approval_requires_operator_token_when_configured(self) -> None:
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=True):
+            response = main.artifact_request_email_draft_approval("artifact-123")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "OperatorAuthError",
+                    "message": "Operator token is required via `X-Operator-Token`",
+                },
+            },
+        )
+
+    @patch.object(main, "request_email_draft_approval", return_value={"approval_id": "approval-123", "status": "pending"})
+    def test_artifact_request_email_draft_approval_passthrough(self, mock_request_email_draft_approval) -> None:
+        response = main.artifact_request_email_draft_approval("artifact-123")
+
+        self.assertEqual(response["approval_id"], "approval-123")
+        mock_request_email_draft_approval.assert_called_once_with("artifact-123")
+
+    def test_artifact_create_email_draft_handoff_requires_operator_token_when_configured(self) -> None:
+        with patch.dict(main.os.environ, {"CLARITYCLAW_OPERATOR_TOKEN": "secret-token"}, clear=True):
+            response = main.artifact_create_email_draft_handoff("artifact-123")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            json.loads(response.body),
+            {
+                "status": "error",
+                "error": {
+                    "type": "OperatorAuthError",
+                    "message": "Operator token is required via `X-Operator-Token`",
+                },
+            },
+        )
+
+    @patch.object(main, "create_email_draft_handoff", return_value={"artifact_id": "handoff-123", "kind": "email_draft_handoff"})
+    def test_artifact_create_email_draft_handoff_passthrough(self, mock_create_email_draft_handoff) -> None:
+        response = main.artifact_create_email_draft_handoff("artifact-123")
+
+        self.assertEqual(response["artifact_id"], "handoff-123")
+        self.assertEqual(response["kind"], "email_draft_handoff")
+        mock_create_email_draft_handoff.assert_called_once_with("artifact-123")
+
     @patch.object(main, "register_worker", return_value={"worker_id": "worker-123", "status": "idle"})
     def test_worker_create_passthrough(self, mock_register_worker) -> None:
         response = main.worker_create({"name": "queue-1", "lease_seconds": 45})

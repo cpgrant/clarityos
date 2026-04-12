@@ -9,9 +9,9 @@ Update this file first when milestone scope changes, then keep the summary in th
 - Latest completed milestone: `v1.7`
 - Current release: `v1.7`
 - Current focus: `v1.8` careful external integration
-- Next planned step: shape the `v1.8` checklist and release path
-- Active execution plan: none yet for `v1.8`
-- Companion planning notes: [`docs/differentiators.md`](./differentiators.md) and [`docs/v1.7-release-path.md`](./v1.7-release-path.md)
+- Next planned step: finish the `v1.8` release-polish checkpoint and operator walkthrough docs
+- Active execution plan: [`docs/v1.8-checklist.md`](./v1.8-checklist.md) and [`docs/v1.8-release-path.md`](./v1.8-release-path.md)
+- Companion planning notes: [`docs/differentiators.md`](./differentiators.md), [`docs/v1.8-checklist.md`](./v1.8-checklist.md), and [`docs/v1.8-release-path.md`](./v1.8-release-path.md)
 - Recent release notes: [`docs/v1.7-checklist.md`](./v1.7-checklist.md), [`docs/v1.7-release-path.md`](./v1.7-release-path.md), [`docs/architecture-v1.7.md`](./architecture-v1.7.md), and [`docs/history/v1.7.md`](./history/v1.7.md)
 
 ## Milestones
@@ -393,10 +393,17 @@ Explicitly not the focus:
 - broad SaaS-style multi-tenancy
 
 20. `v1.8` - careful external integration
-Status: proposed
+Status: in progress
 
 Goal:
 Add one or two narrow integrations beyond the browser surfaces without turning ClarityClaw into a many-channel product prematurely.
+
+Current progress note:
+
+- Slice 1 is complete through a bounded `/intake/email` adapter that preserves explicit email-origin metadata and maps into the normal session/workflow runtime
+- Slice 2 is complete through structured triage parsing, persisted `email_triage` artifacts, and operator-visible triage summaries
+- Slice 3 is complete through draft-reply approval requests, operator-visible approval state, and approved-draft handoff artifacts for email triage
+- Slice 4 is in progress through an explicit `v1.8` release-path document, a concrete operator walkthrough, and bounded release-validation drills for the narrow email-triage use case
 
 Likely focus:
 
@@ -405,9 +412,15 @@ Likely focus:
 - deployment-safe boundary rules for external surfaces
 
 Likely use cases:
+Slices:
+- **Slice 1: Adapter Interface Baseline** - Define the standard contract for external message ingestion.
+- **Slice 2: Webhook/Event Gateway** - Implement the first non-browser entry point.
 
 - one narrow external assistant touchpoint
 - webhook-driven or controlled integration scenarios
+Likely Use Cases:
+ - Automated status reporting via external webhook.
+ - Bounded assistant interaction through a single external messaging channel.
 
 Explicitly not the focus:
 

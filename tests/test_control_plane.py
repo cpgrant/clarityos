@@ -177,6 +177,298 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(view["actions"]["artifacts"][0]["path"], f"/artifacts/{saved_artifact['artifact_id']}")
         self.assertEqual(view["actions"]["memories"][0]["memory_id"], saved_memory["memory_id"])
 
+    def test_workflow_control_view_surfaces_email_triage_summary(self) -> None:
+        triage_workflow = workflow.create_workflow_state(
+            run_id="wf-email",
+            agent="researcher",
+            run_type="model",
+        )
+        workflow.write_workflow(triage_workflow)
+        saved_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email",
+            name="email-triage",
+            kind="email_triage",
+            value={
+                "source": {
+                    "kind": "email",
+                    "account": "ops@example.com",
+                    "mailbox": "inbox",
+                    "thread_id": "thread-123",
+                    "message_id": "msg-123",
+                    "received_at": "2026-04-12T10:00:00+00:00",
+                },
+                "email": {
+                    "subject": "Need invoice copy",
+                    "from": "Alex <alex@example.com>",
+                    "to": ["ops@example.com"],
+                    "cc": [],
+                    "snippet": "Can you resend the invoice?",
+                },
+                "triage": {
+                    "raw_output": "Bottom line: Resend the invoice.\nUrgency: Medium",
+                    "fields": {
+                        "bottom_line": "Resend the invoice.",
+                        "urgency": "Medium",
+                        "suggested_bucket": "Billing",
+                        "recommended_next_action": "Confirm the invoice number and resend it today.",
+                        "draft_reply": "Hi Alex,\nWe can resend that invoice today.",
+                    },
+                    "missing_fields": [],
+                },
+            },
+            metadata={"source": "email_intake"},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(saved_artifact))
+        workflow.write_workflow(triage_workflow)
+
+        view = workflow_control_view(triage_workflow.workflow_id)
+
+        self.assertIsNotNone(view["email_triage"])
+        self.assertEqual(view["email_triage"]["artifact_id"], saved_artifact["artifact_id"])
+        self.assertEqual(view["email_triage"]["subject"], "Need invoice copy")
+        self.assertEqual(view["email_triage"]["from"], "Alex <alex@example.com>")
+        self.assertEqual(view["email_triage"]["urgency"], "Medium")
+        self.assertEqual(view["email_triage"]["suggested_bucket"], "Billing")
+        self.assertIn("invoice", view["email_triage"]["draft_reply_preview"])
+        self.assertEqual(view["email_triage"]["path"], f"/artifacts/{saved_artifact['artifact_id']}")
+        self.assertTrue(view["email_triage"]["request_approval_available"])
+        self.assertIn("approval has not been requested", view["email_triage"]["approval_detail"])
+        self.assertEqual(
+            view["email_triage"]["request_approval_path"],
+            f"/artifacts/{saved_artifact['artifact_id']}/email-draft-approval",
+        )
+        self.assertTrue(view["actions"]["request_email_draft_approval"]["available"])
+        self.assertEqual(
+            view["actions"]["request_email_draft_approval"]["path"],
+            f"/artifacts/{saved_artifact['artifact_id']}/email-draft-approval",
+        )
+
+    def test_workflow_control_view_surfaces_existing_email_draft_approval(self) -> None:
+        triage_workflow = workflow.create_workflow_state(
+            run_id="wf-email",
+            agent="researcher",
+            run_type="model",
+        )
+        workflow.write_workflow(triage_workflow)
+        saved_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email",
+            name="email-triage",
+            kind="email_triage",
+            value={
+                "source": {"kind": "email", "message_id": "msg-123"},
+                "email": {"subject": "Need invoice copy", "from": "Alex <alex@example.com>"},
+                "triage": {
+                    "raw_output": "Bottom line: Resend the invoice.\nDraft reply: Hi Alex",
+                    "fields": {
+                        "bottom_line": "Resend the invoice.",
+                        "draft_reply": "Hi Alex",
+                    },
+                    "missing_fields": ["urgency", "suggested_bucket", "recommended_next_action"],
+                },
+            },
+            metadata={"source": "email_intake"},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(saved_artifact))
+        workflow.write_workflow(triage_workflow)
+        approval_record = approval.create_approval(
+            run_id="wf-email",
+            workflow_id=triage_workflow.workflow_id,
+            agent="researcher",
+            policy_name="email_draft_review",
+            action={
+                "kind": "email_draft_review",
+                "operation": "approve_draft_reply",
+                "artifact_id": saved_artifact["artifact_id"],
+            },
+            reason="Draft reply requires explicit approval before any outward email action",
+            request={"input": "", "agent": "researcher", "tool": None, "tool_args": {"artifact_id": saved_artifact["artifact_id"]}},
+        )
+
+        view = workflow_control_view(triage_workflow.workflow_id)
+
+        self.assertEqual(view["email_triage"]["approval"]["approval_id"], approval_record["approval_id"])
+        self.assertEqual(view["email_triage"]["approval"]["status"], "pending")
+        self.assertIn("Awaiting operator decision", view["email_triage"]["approval_detail"])
+        self.assertEqual(view["email_triage"]["approval_outcome"], "Pending operator review")
+        self.assertIn("Approve, deny, or abort", view["email_triage"]["operator_next_step"])
+        self.assertIn("cannot move beyond review", view["email_triage"]["outward_action_detail"])
+        self.assertFalse(view["email_triage"]["request_approval_available"])
+        self.assertFalse(view["actions"]["request_email_draft_approval"]["available"])
+
+    def test_workflow_control_view_surfaces_approved_email_draft_outcome(self) -> None:
+        triage_workflow = workflow.create_workflow_state(
+            run_id="wf-email-approved",
+            agent="researcher",
+            run_type="model",
+        )
+        workflow.write_workflow(triage_workflow)
+        saved_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email-approved",
+            name="email-triage",
+            kind="email_triage",
+            value={
+                "source": {"kind": "email", "message_id": "msg-123"},
+                "email": {"subject": "Need invoice copy", "from": "Alex <alex@example.com>"},
+                "triage": {
+                    "raw_output": "Bottom line: Resend the invoice.\nDraft reply: Hi Alex",
+                    "fields": {
+                        "bottom_line": "Resend the invoice.",
+                        "draft_reply": "Hi Alex",
+                    },
+                    "missing_fields": ["urgency", "suggested_bucket", "recommended_next_action"],
+                },
+            },
+            metadata={"source": "email_intake"},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(saved_artifact))
+        workflow.write_workflow(triage_workflow)
+        approval_record = approval.create_approval(
+            run_id="wf-email-approved",
+            workflow_id=triage_workflow.workflow_id,
+            agent="researcher",
+            policy_name="email_draft_review",
+            action={
+                "kind": "email_draft_review",
+                "operation": "approve_draft_reply",
+                "artifact_id": saved_artifact["artifact_id"],
+            },
+            reason="Draft reply requires explicit approval before any outward email action",
+            request={"input": "", "agent": "researcher", "tool": None, "tool_args": {"artifact_id": saved_artifact["artifact_id"]}},
+        )
+        approval.approve_approval(approval_record["approval_id"])
+
+        view = workflow_control_view(triage_workflow.workflow_id)
+
+        self.assertEqual(view["email_triage"]["approval"]["status"], "approved")
+        self.assertEqual(view["email_triage"]["approval_outcome"], "Approved for human follow-through")
+        self.assertIn("Create an approved draft handoff artifact", view["email_triage"]["operator_next_step"])
+        self.assertIn("does not unlock automatic send behavior", view["email_triage"]["outward_action_detail"])
+        self.assertTrue(view["email_triage"]["create_handoff_available"])
+        self.assertEqual(
+            view["email_triage"]["create_handoff_path"],
+            f"/artifacts/{saved_artifact['artifact_id']}/email-approved-draft-handoff",
+        )
+        self.assertTrue(view["actions"]["create_email_draft_handoff"]["available"])
+        self.assertFalse(view["email_triage"]["request_approval_available"])
+
+    def test_workflow_control_view_surfaces_denied_email_draft_outcome(self) -> None:
+        triage_workflow = workflow.create_workflow_state(
+            run_id="wf-email-denied",
+            agent="researcher",
+            run_type="model",
+        )
+        workflow.write_workflow(triage_workflow)
+        saved_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email-denied",
+            name="email-triage",
+            kind="email_triage",
+            value={
+                "source": {"kind": "email", "message_id": "msg-123"},
+                "email": {"subject": "Need invoice copy", "from": "Alex <alex@example.com>"},
+                "triage": {
+                    "raw_output": "Bottom line: Resend the invoice.\nDraft reply: Hi Alex",
+                    "fields": {
+                        "bottom_line": "Resend the invoice.",
+                        "draft_reply": "Hi Alex",
+                    },
+                    "missing_fields": ["urgency", "suggested_bucket", "recommended_next_action"],
+                },
+            },
+            metadata={"source": "email_intake"},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(saved_artifact))
+        workflow.write_workflow(triage_workflow)
+        approval_record = approval.create_approval(
+            run_id="wf-email-denied",
+            workflow_id=triage_workflow.workflow_id,
+            agent="researcher",
+            policy_name="email_draft_review",
+            action={
+                "kind": "email_draft_review",
+                "operation": "approve_draft_reply",
+                "artifact_id": saved_artifact["artifact_id"],
+            },
+            reason="Draft reply requires explicit approval before any outward email action",
+            request={"input": "", "agent": "researcher", "tool": None, "tool_args": {"artifact_id": saved_artifact["artifact_id"]}},
+        )
+        approval.deny_approval(approval_record["approval_id"])
+
+        view = workflow_control_view(triage_workflow.workflow_id)
+
+        self.assertEqual(view["email_triage"]["approval"]["status"], "denied")
+        self.assertEqual(view["email_triage"]["approval_outcome"], "Draft denied")
+        self.assertIn("Approval can be requested again", view["email_triage"]["operator_next_step"])
+        self.assertIn("No outward email action is available", view["email_triage"]["outward_action_detail"])
+        self.assertTrue(view["email_triage"]["request_approval_available"])
+        self.assertTrue(view["actions"]["request_email_draft_approval"]["available"])
+
+    def test_workflow_control_view_surfaces_approved_email_draft_handoff(self) -> None:
+        triage_workflow = workflow.create_workflow_state(
+            run_id="wf-email-handoff",
+            agent="researcher",
+            run_type="model",
+        )
+        workflow.write_workflow(triage_workflow)
+        saved_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email-handoff",
+            name="email-triage",
+            kind="email_triage",
+            value={
+                "source": {"kind": "email", "message_id": "msg-123"},
+                "email": {"subject": "Need invoice copy", "from": "Alex <alex@example.com>"},
+                "triage": {
+                    "raw_output": "Bottom line: Resend the invoice.\nDraft reply: Hi Alex",
+                    "fields": {"bottom_line": "Resend the invoice.", "draft_reply": "Hi Alex"},
+                    "missing_fields": ["urgency", "suggested_bucket", "recommended_next_action"],
+                },
+            },
+            metadata={"source": "email_intake"},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(saved_artifact))
+        approval_record = approval.create_approval(
+            run_id="wf-email-handoff",
+            workflow_id=triage_workflow.workflow_id,
+            agent="researcher",
+            policy_name="email_draft_review",
+            action={
+                "kind": "email_draft_review",
+                "operation": "approve_draft_reply",
+                "artifact_id": saved_artifact["artifact_id"],
+            },
+            reason="Draft reply requires explicit approval before any outward email action",
+            request={"input": "", "agent": "researcher", "tool": None, "tool_args": {"artifact_id": saved_artifact["artifact_id"]}},
+        )
+        approval.approve_approval(approval_record["approval_id"])
+        handoff_artifact = artifact.create_artifact(
+            workflow_id=triage_workflow.workflow_id,
+            run_id="wf-email-handoff",
+            name="email-approved-draft",
+            kind="email_draft_handoff",
+            value={
+                "source": {"triage_artifact_id": saved_artifact["artifact_id"]},
+                "handoff": {
+                    "draft_reply": "Hi Alex",
+                    "operator_guidance": "Use this approved draft for manual follow-through outside ClarityClaw.",
+                },
+            },
+            metadata={"triage_artifact_id": saved_artifact["artifact_id"], "approval_id": approval_record["approval_id"]},
+        )
+        workflow.register_artifact(triage_workflow, artifact.artifact_summary(handoff_artifact))
+        workflow.write_workflow(triage_workflow)
+
+        view = workflow_control_view(triage_workflow.workflow_id)
+
+        self.assertEqual(view["email_triage"]["approval_outcome"], "Approved handoff ready")
+        self.assertEqual(view["email_triage"]["approved_handoff"]["artifact_id"], handoff_artifact["artifact_id"])
+        self.assertEqual(view["email_triage"]["approved_handoff"]["path"], f"/artifacts/{handoff_artifact['artifact_id']}")
+        self.assertFalse(view["email_triage"]["create_handoff_available"])
+        self.assertFalse(view["actions"]["create_email_draft_handoff"]["available"])
+
     def test_workflow_control_view_includes_related_jobs_workers_and_recovery_actions(self) -> None:
         parent = workflow.create_workflow_state(
             run_id="wf-parent",

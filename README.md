@@ -7,10 +7,12 @@ ClarityClaw aims at some of the usefulness of broad assistant gateways, but with
 ## Status
 
 - Current release: `v1.7`
-- Current focus: `v1.8` planning
-- Next target: shape the `v1.8` checklist and release path
+- Current focus: `v1.8` narrow email-triage integration
+- Next target: finish the `v1.8` release-polish checkpoint
 
 Direction after `v1.7`: `v1.8` should add one careful external integration without turning ClarityClaw into a many-channel product too early.
+
+`v1.8` is now underway rather than purely planned. The current checkpoint completes the bounded email intake, structured triage, explicit draft approval, and approved-draft handoff path, while the remaining work stays in release polish and supportable walkthrough documentation.
 
 `v1.7` is now the current release. It completes the packaged self-hosted deployment and operator-maturity layer: a packaged startup path, explicit state-root posture, stronger operator runtime visibility, and a narrow release path for repeatable self-hosted operation.
 
@@ -40,8 +42,8 @@ Direction after `v1.7`: `v1.8` should add one careful external integration witho
 
 Recent release notes live in `docs/v1.7-checklist.md`, `docs/v1.7-release-path.md`, `docs/architecture-v1.7.md`, and `docs/history/v1.7.md`.
 
-The next planning move is `v1.8`: careful external integration that still hands work to the existing session, workflow, queue, and operator runtime rather than creating channel sprawl.
-Companion planning notes from the released `v1.7` line live in `docs/differentiators.md` and `docs/v1.7-release-path.md`.
+The current `v1.8` move is careful external integration that still hands work to the existing session, workflow, queue, and operator runtime rather than creating channel sprawl.
+Active `v1.8` notes live in `docs/differentiators.md`, `docs/v1.8-checklist.md`, and `docs/v1.8-release-path.md`.
 
 After `v1.7`, the action side still remains intentionally narrow. Repo write helpers, hidden preference learning, proactive autonomy, and broad hosted-platform expansion are still explicitly deferred beyond this release line.
 

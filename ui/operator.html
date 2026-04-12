@@ -459,6 +459,8 @@
               <div class="label">Workflow And Incident View</div>
               <div id="workflow-actions" class="action-row" style="margin-bottom: 12px;"></div>
               <div id="latest-incident" class="kvs"></div>
+              <div class="label" style="margin-top: 14px;">Email Triage</div>
+              <div id="email-triage" class="collection"></div>
               <div class="label" style="margin-top: 14px;">Related Workflows</div>
               <div id="related-workflows" class="collection"></div>
               <div class="label" style="margin-top: 14px;">Recent Activity</div>
@@ -501,6 +503,7 @@
     const runtimeEventsEl = document.getElementById("runtime-events");
     const sessionHeaderEl = document.getElementById("session-header");
     const latestIncidentEl = document.getElementById("latest-incident");
+    const emailTriageEl = document.getElementById("email-triage");
     const relatedWorkflowsEl = document.getElementById("related-workflows");
     const sessionActivityEl = document.getElementById("session-activity");
     const sessionContinuityEl = document.getElementById("session-continuity");
@@ -544,6 +547,7 @@
     function renderDetailLoading() {
       sessionHeaderEl.innerHTML = emptyMarkup("Loading selected session...");
       latestIncidentEl.innerHTML = emptyMarkup("Loading workflow and incident summary...");
+      emailTriageEl.innerHTML = emptyMarkup("Checking for structured email triage...");
       relatedWorkflowsEl.innerHTML = emptyMarkup("Loading related workflows...");
       sessionActivityEl.innerHTML = emptyMarkup("Loading recent activity...");
       sessionContinuityEl.innerHTML = emptyMarkup("Loading continuity view...");
@@ -554,6 +558,7 @@
     function renderDetailEmpty(message = "Select a session to inspect its related workflows and incidents.") {
       sessionHeaderEl.innerHTML = emptyMarkup(message);
       latestIncidentEl.innerHTML = emptyMarkup("No session selected.");
+      emailTriageEl.innerHTML = emptyMarkup("No structured email triage is available.");
       relatedWorkflowsEl.innerHTML = emptyMarkup("No related workflows yet.");
       sessionActivityEl.innerHTML = emptyMarkup("No recent activity yet.");
       sessionContinuityEl.innerHTML = emptyMarkup("No continuity data yet.");
@@ -565,6 +570,7 @@
     function renderDetailError(message) {
       sessionHeaderEl.innerHTML = emptyMarkup(`Could not load the selected session. ${message}`);
       latestIncidentEl.innerHTML = emptyMarkup("Workflow and incident details are unavailable.");
+      emailTriageEl.innerHTML = emptyMarkup("Structured email triage is unavailable.");
       relatedWorkflowsEl.innerHTML = emptyMarkup("Related workflows could not be loaded.");
       sessionActivityEl.innerHTML = emptyMarkup("Recent activity is unavailable.");
       sessionContinuityEl.innerHTML = emptyMarkup("Continuity view is unavailable.");
@@ -594,6 +600,21 @@
         throw new Error(payload?.error?.message || `Request failed with status ${response.status}`);
       }
       return payload;
+    }
+
+    async function postOperatorAction(path, successMessage, body = JSON.stringify({})) {
+      if (!path) {
+        return;
+      }
+      setStatus("Running operator action...");
+      try {
+        await fetchJson(path, { method: "POST", body });
+        setStatus(successMessage);
+        await refreshSelectedSession();
+        await refreshDashboard();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
     }
 
     async function loadOperatorAuth() {
@@ -813,6 +834,47 @@
         { label: "Current step", value: currentWorkflow.current_step?.step_type || "None" },
       ]);
 
+      const emailTriage = currentWorkflow.email_triage;
+      if (!emailTriage) {
+        emailTriageEl.innerHTML = emptyMarkup("No structured email triage artifact for the current workflow.");
+      } else {
+        const approvalButtons = emailTriage.approval?.status === "pending"
+          ? `
+            <div class="action-row" style="margin-top: 10px;">
+              <button type="button" class="primary" data-email-approval-action="approve" data-path="${emailTriage.approval.approve_path}">Approve Draft</button>
+              <button type="button" class="warn" data-email-approval-action="deny" data-path="${emailTriage.approval.deny_path}">Deny Draft</button>
+              <button type="button" class="secondary" data-email-approval-action="abort" data-path="${emailTriage.approval.abort_path}">Abort Approval</button>
+            </div>
+          `
+          : "";
+        emailTriageEl.innerHTML = `
+          <article class="entry">
+            <strong>${emailTriage.subject || "Untitled email"}</strong>
+            <div>${emailTriage.bottom_line || emailTriage.raw_output_preview || "No triage summary yet."}</div>
+            <div>Urgency: ${emailTriage.urgency || "unknown"} · Bucket: ${emailTriage.suggested_bucket || "unassigned"}</div>
+            <div>Next action: ${emailTriage.recommended_next_action || "No recommendation yet"}</div>
+            <div>From: ${emailTriage.from || "unknown"} · Account: ${emailTriage.account || "unknown"}${emailTriage.mailbox ? " / " + emailTriage.mailbox : ""}</div>
+            <div>Draft reply: ${emailTriage.draft_reply_preview || "None suggested"}</div>
+            <div>Approval: ${emailTriage.approval?.status || (emailTriage.request_approval_available ? "not requested" : "not available")}</div>
+            <div>Outcome: ${emailTriage.approval_outcome || "No explicit outcome yet"}</div>
+            <div>${emailTriage.approval_detail || "No approval guidance available."}</div>
+            <div>Next operator step: ${emailTriage.operator_next_step || "Review the workflow details before taking action."}</div>
+            <div>Outward action: ${emailTriage.outward_action_detail || "No outward email action is available."}</div>
+            <div>Approved handoff: ${emailTriage.approved_handoff?.path || "Not created yet"}</div>
+            <div>${emailTriage.approved_handoff?.operator_guidance || "No approved handoff artifact is available yet."}</div>
+            <small>${emailTriage.path || ""}${Array.isArray(emailTriage.missing_fields) && emailTriage.missing_fields.length ? " · Missing: " + emailTriage.missing_fields.join(", ") : ""}</small>
+            ${approvalButtons}
+          </article>
+        `;
+
+        for (const button of emailTriageEl.querySelectorAll("button[data-email-approval-action]")) {
+          button.addEventListener("click", async () => {
+            const action = button.dataset.emailApprovalAction || "update";
+            await postOperatorAction(button.dataset.path, `Completed ${action} for the email draft approval.`);
+          });
+        }
+      }
+
       relatedWorkflowsEl.innerHTML = entryMarkup(control.related_workflows || [], (workflow) => `
         <article class="entry">
           <strong>${workflow.workflow_id}</strong>
@@ -930,6 +992,12 @@
       if (workflow.actions?.recover?.available) {
         actions.push({ label: "Recover Jobs", className: "danger", action: "recover" });
       }
+      if (workflow.actions?.request_email_draft_approval?.available) {
+        actions.push({ label: "Request Draft Approval", className: "secondary", action: "request_email_draft_approval" });
+      }
+      if (workflow.actions?.create_email_draft_handoff?.available) {
+        actions.push({ label: "Create Approved Draft Handoff", className: "secondary", action: "create_email_draft_handoff" });
+      }
 
       if (!actions.length) {
         workflowActionsEl.innerHTML = emptyMarkup("No operator recovery action is currently available.");
@@ -964,21 +1032,18 @@
           reschedule_failed_jobs: Array.isArray(recover.failed_job_ids) && recover.failed_job_ids.length > 0,
           reschedule_dead_letter_jobs: Array.isArray(recover.dead_letter_job_ids) && recover.dead_letter_job_ids.length > 0,
         });
+      } else if (action === "request_email_draft_approval") {
+        path = currentWorkflowActions?.request_email_draft_approval?.path || null;
+        body = JSON.stringify({});
+      } else if (action === "create_email_draft_handoff") {
+        path = currentWorkflowActions?.create_email_draft_handoff?.path || null;
+        body = JSON.stringify({});
       }
 
       if (!path) {
         return;
       }
-
-      setStatus(`Running ${action} for ${workflowId}...`);
-      try {
-        await fetchJson(path, { method: "POST", body });
-        setStatus(`Completed ${action} for ${workflowId}.`);
-        await refreshSelectedSession();
-        await refreshDashboard();
-      } catch (error) {
-        setStatus(error.message, true);
-      }
+      await postOperatorAction(path, `Completed ${action} for ${workflowId}.`, body);
     }
 
     async function refreshSelectedSession() {

@@ -152,6 +152,7 @@ class BrowserSmokeTests(unittest.TestCase):
             self.assertIn("ClarityClaw v1.7", body)
             self.assertIn("Operator Console", body)
             self.assertIn("Runtime Posture", body)
+            self.assertIn("Email Triage", body)
             self.assertIn("session-item", body)
 
             dashboard_response = main.operator_dashboard(

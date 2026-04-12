@@ -20,6 +20,7 @@ from runtime.control_plane import (
     workflow_incident_view,
     workflow_incident_summary_view,
 )
+from runtime.email_intake import create_email_draft_handoff, intake_email, request_email_draft_approval
 from runtime.errors import (
     ApprovalStateError,
     BudgetExceededError,
@@ -841,6 +842,22 @@ def session_append_message(
         return error_response(exc)
 
 
+@app.post("/intake/email")
+def email_intake(
+    payload: dict,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return intake_email(
+            payload,
+            agent=payload.get("agent", "researcher"),
+            session_id=payload.get("session_id"),
+        )
+    except Exception as exc:
+        return error_response(exc)
+
+
 def queue_job_request(payload: dict):
     job_type = payload.get("type", "workflow_start")
     workflow_id = payload.get("workflow_id")
@@ -1180,6 +1197,30 @@ def approval_status(
 def artifact_status(artifact_id: str):
     try:
         return load_artifact(artifact_id)
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/artifacts/{artifact_id}/email-draft-approval")
+def artifact_request_email_draft_approval(
+    artifact_id: str,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return request_email_draft_approval(artifact_id)
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/artifacts/{artifact_id}/email-approved-draft-handoff")
+def artifact_create_email_draft_handoff(
+    artifact_id: str,
+    x_operator_token: str | None = Header(default=None, alias=OPERATOR_AUTH_HEADER),
+):
+    try:
+        require_operator_auth(x_operator_token)
+        return create_email_draft_handoff(artifact_id)
     except Exception as exc:
         return error_response(exc)
 
