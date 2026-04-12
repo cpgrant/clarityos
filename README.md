@@ -106,7 +106,7 @@ Released architecture snapshots live in `docs/architecture-v1.7.md`, `docs/archi
 ## Project Structure
 
 ```text
-clarityos/
+clarityclaw/
 ├── .dockerignore
 ├── Containerfile
 ├── approvals/
@@ -314,7 +314,7 @@ If `CLARITYOS_WIDGET_ALLOWED_ORIGINS` is unset, the widget defaults to same-orig
 
 Assistant-facing sessions now use an explicit per-session token for browser and embed access. New sessions created through `/sessions` return a `session_token`; assistant surfaces send it back through `X-Session-Token` on `/assistant/sessions/{session_id}` and `/sessions/{session_id}/messages`. Operator routes remain separately protected by `X-Operator-Token`.
 
-Assistant-surface operators now have dedicated playbooks in [docs/playbooks/README.md](/home/cpgrant/development/codex/clarityos/docs/playbooks/README.md) for:
+Assistant-surface operators now have dedicated playbooks in [docs/playbooks/README.md](/home/cpgrant/development/codex/clarityclaw/docs/playbooks/README.md) for:
 - assistant-surface incidents
 - widget deployment mistakes
 - session archive and prune flows
