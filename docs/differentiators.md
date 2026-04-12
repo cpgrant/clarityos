@@ -4,6 +4,28 @@ This document tracks standout product directions that could make ClarityClaw mea
 
 These are not all committed roadmap items. They are strategy notes to help identify which ideas are worth protecting as the runtime evolves.
 
+## Positioning Relative To Broad Assistant Gateways
+
+ClarityClaw can move partly in the same direction as systems like OpenClaw without trying to copy their full center of gravity.
+
+Useful overlap:
+
+- narrow external integrations beyond the browser surfaces
+- assistant access from more than one touchpoint
+- workflow-backed task execution that can be triggered from outside the core UI
+
+Where ClarityClaw should stay meaningfully different:
+
+- explicit runtime state instead of hidden orchestration
+- inspectable workflows, jobs, memories, approvals, and artifacts
+- bounded integrations rather than channel sprawl
+- operator-visible recovery and maintenance posture
+- approval-friendly support for sensitive work such as email, support triage, and internal operations
+
+The goal is not broad channel parity first.
+
+The goal is to make external assistant work more trustworthy, supportable, and understandable than a generic multi-channel gateway.
+
 ## Near-Term Differentiators
 
 ### Auditable Continuity

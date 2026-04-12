@@ -2,6 +2,8 @@
 
 Minimal, explicit AI runtime for workflows, queues, and typed memory.
 
+ClarityClaw aims at some of the usefulness broad assistant gateways point toward, but with more clarity, inspectability, boundedness, and operator support.
+
 ## Status
 
 - Current release: `v1.7`
